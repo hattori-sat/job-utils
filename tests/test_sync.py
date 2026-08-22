@@ -107,6 +107,34 @@ Base content.
         rendered = externalize_references(self.repo, "[Target](../documents/target.md)", source)
         self.assertEqual(rendered, "[Target](https://example.invalid/page)")
 
+    def test_jira_payload_keeps_progress_comment_as_configured_text_field(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text("""---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task'
+publish_jira: 'true'
+jira_project: 'JOB'
+jira_progress_comment_field: 'customfield_12345'
+---
+
+# Summary
+
+Summary.
+
+# Progress Comment
+
+2026-08-23: completed the first review.
+
+# Objective
+
+Objective.
+""", encoding="utf-8")
+        plan = create_plan(self.repo)
+        payload = plan["actions"][0]["payload"]
+        self.assertEqual(payload["progress_comment_field"], "customfield_12345")
+        self.assertIn("2026-08-23", payload["progress_comment"])
+
 
 if __name__ == "__main__":
     unittest.main()

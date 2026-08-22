@@ -24,6 +24,7 @@ publish_jira: false
 jira_project: null
 jira_issue_type: Task
 jira_parent_key: null
+jira_progress_comment_field: null
 jira_key: null
 jira_url: null
 publish_confluence: false

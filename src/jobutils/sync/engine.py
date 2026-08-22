@@ -49,6 +49,8 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
             "parent_key": document.metadata.get("jira_parent_key"),
             "jira_key": document.metadata.get("jira_key"),
             "jira_url": document.metadata.get("jira_url"),
+            "progress_comment": document.section("Progress Comment"),
+            "progress_comment_field": document.metadata.get("jira_progress_comment_field"),
         }
     return {
         "title": document.metadata.get("title") or path.stem,

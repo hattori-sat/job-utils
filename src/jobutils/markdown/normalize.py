@@ -14,6 +14,15 @@ class MarkdownDocument:
     public_body: str
     implementation_note: str
 
+    def section(self, heading: str) -> str:
+        pattern = re.compile(r"(?m)^#\s+{}\s*$".format(re.escape(heading)))
+        match = pattern.search(self.public_body)
+        if not match:
+            return ""
+        next_heading = re.search(r"(?m)^#\s+.+?\s*$", self.public_body[match.end() :])
+        end = match.end() + next_heading.start() if next_heading else len(self.public_body)
+        return self.public_body[match.end() : end].strip()
+
 
 def split_implementation_note(body: str) -> Tuple[str, str]:
     match = re.search(r"(?m)^#\s+Implementation Note\s*$", body)
@@ -50,7 +59,7 @@ def parse_document(path: str) -> MarkdownDocument:
             "publish_confluence", "jira_key", "jira_url", "confluence_page_id",
             "confluence_url", "confluence_parent_id", "jira_project",
             "jira_issue_type", "jira_parent_key", "confluence_space_id",
-            "confluence_space_key", "confluence_version", "sync_hash",
+            "confluence_space_key", "confluence_version", "jira_progress_comment_field", "sync_hash",
         )
     }
     return MarkdownDocument(str(path), metadata, body, public_body, implementation_note)

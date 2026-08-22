@@ -79,14 +79,15 @@ class AtlassianHttpAdapter(SyncAdapter):
 
     def create(self, kind: str, payload: Dict) -> Dict:
         if kind == "jira":
-            body = {
-                "fields": {
-                    "project": {"key": payload["project"]},
-                    "summary": payload["title"],
-                    "issuetype": {"name": payload["issue_type"]},
-                    "description": payload["description_adf"],
-                }
+            fields = {
+                "project": {"key": payload["project"]},
+                "summary": payload["title"],
+                "issuetype": {"name": payload["issue_type"]},
+                "description": payload["description_adf"],
             }
+            if payload.get("progress_comment_field") and payload.get("progress_comment"):
+                fields[payload["progress_comment_field"]] = payload["progress_comment"]
+            body = {"fields": fields}
             if payload.get("parent_key"):
                 body["fields"]["parent"] = {"key": payload["parent_key"]}
             result = self._request(self.config["jira_base_url"], "/rest/api/3/issue", "JIRA_EMAIL", "JIRA_API_TOKEN", "POST", body)
@@ -104,7 +105,10 @@ class AtlassianHttpAdapter(SyncAdapter):
 
     def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
         if kind == "jira":
-            body = {"fields": {"summary": payload["title"], "description": payload["description_adf"]}}
+            fields = {"summary": payload["title"], "description": payload["description_adf"]}
+            if payload.get("progress_comment_field") and payload.get("progress_comment"):
+                fields[payload["progress_comment_field"]] = payload["progress_comment"]
+            body = {"fields": fields}
             result = self._request(self.config["jira_base_url"], "/rest/api/3/issue/" + external_id, "JIRA_EMAIL", "JIRA_API_TOKEN", "PUT", body)
             return {"id": external_id, "key": payload.get("jira_key", external_id), "url": payload.get("jira_url")}
         body = {
