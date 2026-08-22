@@ -1,0 +1,26 @@
+# Copy only the relevant keys into task/document front matter for a published item.
+# Credentials belong in the process environment, never in this file.
+
+publish_jira: false
+jira_project: EXAMPLE
+jira_issue_type: Task
+jira_parent_key: null
+jira_progress_comment_field: null
+jira_key: null
+jira_url: null
+
+publish_confluence: false
+confluence_space_id: ""
+confluence_space_key: ""
+confluence_parent_id: null
+confluence_page_id: null
+confluence_url: null
+confluence_version: 0
+
+# The HTTP adapter reads these names when --adapter atlassian is selected:
+# JIRA_BASE_URL
+# JIRA_EMAIL
+# JIRA_API_TOKEN
+# CONFLUENCE_BASE_URL
+# CONFLUENCE_EMAIL
+# CONFLUENCE_API_TOKEN
