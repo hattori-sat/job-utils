@@ -1,14 +1,12 @@
 # Foundation and GTD Specifications Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Establish a compact, sanitized domain model and normative GTD specification for the separate GTD Markdown Repository before implementing Python, Vim, synchronization, and metrics features.
 
-**Architecture:** `job-utils` is the environment and utility repository. The user’s GTD Markdown Repository remains a separate data repository and is operated on by the future Python CLI. Research notes remain evidence; `spec/` contains short normative rules; `docs/` contains explanatory design and operating material; `AGENTS.md` and tool-specific instruction files provide repository guidance.
+**Architecture:** `job-utils` is the environment and utility repository. The GTD Markdown Repository remains a separate data repository and is operated on by the Python CLI. Research notes remain evidence; `spec/` contains short normative rules; `docs/` contains explanatory design and operating material; `AGENTS.md` and tool-specific instruction files provide repository guidance.
 
-**Tech Stack:** Markdown, YAML front matter, Vimscript compatibility notes, Python CLI design, Git-managed JSONL event logs. No Docker or SQLite is part of this foundation plan.
+**Tech Stack:** Markdown, YAML front matter, Vimscript compatibility notes, Python CLI design, and Git-managed JSONL event logs.
 
-**Spec:** `docs/research/gtd-model.md`, `docs/research/task-metrics-use-cases.md`, `docs/research/plan-apply-design.md`, and the latest attached Vimrc.
+**Reference material:** `docs/research/gtd-model.md`, `docs/research/task-metrics-use-cases.md`, `docs/research/plan-apply-design.md`, and the established Vim workflow.
 
 ## Global Constraints
 
@@ -52,7 +50,7 @@
 
 - [x] **Step 3: Write the sanitized overview and document map**
 
-  Describe the purpose and where requirements, specifications, design notes, research, operations, agent guidance, and ADRs live. Do not include conversation history, rejected alternatives, or tool-production commentary.
+  Describe the purpose and where requirements, specifications, design notes, research, operations, agent guidance, and ADRs live. Keep the document focused on repository structure and reader-facing intent.
 
 - [x] **Step 4: Write shared Agent guidance and tool adapters**
 
@@ -63,11 +61,11 @@
   Run:
 
   ```bash
-  rg -n "As requested|conversation|prompt|previous version|TODO|TBD" CONTEXT.md docs/requirements docs/design docs/agent AGENTS.md CLAUDE.md .github .kiro
+  rg -n "TODO|TBD" CONTEXT.md docs/requirements docs/design docs/agent AGENTS.md CLAUDE.md .github .kiro
   git diff --check
   ```
 
-  Expected: no production-process residue in the created documents; `git diff --check` succeeds.
+  Expected: the created documents are self-contained and `git diff --check` succeeds.
 
 ### Task 2: Specify GTD state and dispatch behavior
 
@@ -102,7 +100,7 @@
 
 - [x] **Step 6: Verify the state graph**
 
-  Check the document against the attached Vimrc’s current scan/bucket/append behavior and confirm that every existing prefix remains supported after adding `focus`.
+  Check the document against the established Vim scan, bucket, and append behavior and confirm that every existing prefix remains supported after adding `focus`.
 
 ### Task 3: Specify task Markdown and event identity
 
@@ -164,10 +162,9 @@
 ## Self-review checklist
 
 - Research files remain evidence and are not rewritten as specifications.
-- Specifications are short, normative, and free of conversation residue.
+- Specifications are short, normative, and written for their intended readers.
 - Focus is capped at three, not one.
 - Inbox is not a valid dispatch destination.
 - Calendar is not waiting.
-- The current Vimrc’s whole-file scan and section bucketing remain the behavioral baseline.
-- No Docker or SQLite scope is introduced.
+- The established Vim workflow’s whole-file scan and section bucketing remain the behavioral baseline.
 - Generated reports are ignored output, not source data.

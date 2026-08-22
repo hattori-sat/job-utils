@@ -29,8 +29,7 @@ tests, and examples.
 
 Research notes are evidence, not requirements. Before committing a
 user-facing requirement, specification, design note, or operating guide,
-rewrite it as a standalone document without conversation history or production
-scaffolding.
+write it as a concise, self-contained document for its intended readers.
 
 ## Human entry points
 
