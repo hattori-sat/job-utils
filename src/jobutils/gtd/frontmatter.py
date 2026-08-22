@@ -58,4 +58,3 @@ def remove_key(lines: List[str], key: str) -> None:
     for index in range(location[1] - 1, location[0], -1):
         if pattern.match(lines[index]):
             del lines[index]
-

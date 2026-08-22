@@ -65,4 +65,3 @@ class TaskItem:
     @property
     def rendered_line(self) -> str:
         return "- {}: {}".format(self.prefix, self.rendered_body)
-

@@ -16,4 +16,3 @@ cnoreabbrev <expr> gtd
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtd' ? 'Gtd' : 'gtd'
 cnoreabbrev <expr> gtdtask
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdtask' ? 'GtdTask' : 'gtdtask'
-

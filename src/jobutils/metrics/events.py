@@ -36,4 +36,3 @@ def append_state_change(
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
     return path
-

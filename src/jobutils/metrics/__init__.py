@@ -1,2 +1,1 @@
 """Portable metric event storage."""
-

@@ -49,4 +49,3 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("GTD: task failed", file=sys.stderr)
         print(str(error), file=sys.stderr)
         return 1
-

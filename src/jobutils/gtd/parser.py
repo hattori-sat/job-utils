@@ -49,4 +49,3 @@ def scan_items(lines: Iterable[str]) -> Tuple[List[TaskItem], List[Tuple[int, st
                 TaskItem(index, title, section_prefix, current_section, link, False)
             )
     return items, prefixed
-
