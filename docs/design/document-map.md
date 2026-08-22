@@ -1,0 +1,59 @@
+# Document Map
+
+## Repository layout
+
+```text
+job-utils/
+├── CONTEXT.md
+├── README.md
+├── AGENTS.md
+├── CLAUDE.md
+├── .github/copilot-instructions.md
+├── .kiro/steering/project.md
+├── src/
+├── vim/
+├── tests/
+├── skills/
+├── docs/
+│   ├── agent/
+│   ├── design/
+│   ├── operations/
+│   ├── research/
+│   ├── requirements/
+│   └── adr/
+└── spec/
+    ├── gtd/
+    ├── sync/
+    ├── documents/
+    └── reports/
+```
+
+## Document roles
+
+- `CONTEXT.md`: concise domain vocabulary and term boundaries.
+- `docs/research/`: source-backed investigation and evidence.
+- `docs/requirements/`: user-visible goals and invariants.
+- `docs/design/`: explanatory architecture and data-model notes.
+- `spec/`: short normative specifications that implementation must satisfy.
+- `docs/operations/`: setup, usage, and troubleshooting guidance.
+- `docs/adr/`: durable decisions with meaningful trade-offs.
+- `docs/agent/`: shared guidance for coding agents and maintainers.
+- `skills/`: implementation resources for job-utils skill development.
+
+## Separate GTD Repository
+
+```text
+gtd-repository/
+├── gtd.md
+├── docs.md
+├── gtd_tasks/
+├── documents/
+└── .jobutils/
+    ├── metrics/events/
+    ├── output/
+    ├── snapshots/
+    └── taxonomy.md
+```
+
+The GTD Repository is an input and data location for job-utils. It is not
+embedded in this repository.
