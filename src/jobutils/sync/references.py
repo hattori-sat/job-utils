@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from jobutils.markdown.normalize import public_markdown_links
 
@@ -17,5 +17,18 @@ def published_reference_map(repo_root: Path) -> Dict[str, str]:
     return result
 
 
-def externalize_references(repo_root: Path, body: str) -> str:
-    return public_markdown_links(body, published_reference_map(repo_root))
+def externalize_references(repo_root: Path, body: str, source_path: Optional[Path] = None) -> str:
+    published = published_reference_map(repo_root)
+    if source_path is None:
+        return public_markdown_links(body, published)
+    import os
+
+    source_dir = Path(source_path).parent.resolve()
+    root = Path(repo_root).resolve()
+    relative_targets = {}
+    for key, value in published.items():
+        absolute = root / key
+        target = os.path.relpath(str(absolute), str(source_dir)).replace("\\", "/")
+        relative_targets[target] = value
+        relative_targets[key] = value
+    return public_markdown_links(body, relative_targets)

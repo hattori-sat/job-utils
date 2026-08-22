@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 from urllib import request
 
-from jobutils.markdown.normalize import markdown_to_storage
+from jobutils.markdown.normalize import adf_to_markdown, markdown_to_storage, storage_to_markdown
 
 
 class SyncAdapter(ABC):
@@ -15,6 +15,10 @@ class SyncAdapter(ABC):
 
     @abstractmethod
     def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch(self, kind: str, external_id: str) -> Dict:
         raise NotImplementedError
 
 
@@ -37,6 +41,15 @@ class MemoryAdapter(SyncAdapter):
             raise ValueError("external record does not exist: {}".format(external_id))
         self.records[external_id]["payload"] = payload
         return {"id": external_id, "key": external_id if kind == "jira" else None, "url": self.records[external_id]["url"]}
+
+    def fetch(self, kind: str, external_id: str) -> Dict:
+        record = self.records[external_id]
+        payload = record["payload"]
+        if kind == "jira":
+            body = adf_to_markdown(payload.get("description_adf", {}))
+        else:
+            body = storage_to_markdown(payload.get("storage_body", ""))
+        return {"id": external_id, "title": payload.get("title", ""), "body_markdown": body, "url": record["url"]}
 
 
 class AtlassianHttpAdapter(SyncAdapter):
@@ -103,3 +116,12 @@ class AtlassianHttpAdapter(SyncAdapter):
         }
         self._request(self.config["confluence_base_url"], "/wiki/api/v2/pages/" + external_id, "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN", "PUT", body)
         return {"id": external_id, "key": None, "url": payload.get("confluence_url")}
+
+    def fetch(self, kind: str, external_id: str) -> Dict:
+        if kind == "jira":
+            result = self._request(self.config["jira_base_url"], "/rest/api/3/issue/" + external_id, "JIRA_EMAIL", "JIRA_API_TOKEN", "GET", {})
+            fields = result.get("fields", {})
+            return {"id": external_id, "title": fields.get("summary", ""), "body_markdown": adf_to_markdown(fields.get("description", {})), "url": self.config["jira_base_url"].rstrip("/") + "/browse/" + external_id}
+        result = self._request(self.config["confluence_base_url"], "/wiki/api/v2/pages/" + external_id + "?body-format=storage", "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN", "GET", {})
+        body = result.get("body", {}).get("storage", {}).get("value", "")
+        return {"id": external_id, "title": result.get("title", ""), "body_markdown": storage_to_markdown(body), "url": self.config["confluence_base_url"].rstrip("/") + "/wiki/pages/" + external_id}

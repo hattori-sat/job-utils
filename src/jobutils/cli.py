@@ -11,7 +11,7 @@ from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
 from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
-from .sync.engine import SyncError, apply_plan, create_plan, save_plan
+from .sync.engine import SyncError, apply_plan, create_plan, pull, save_plan
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -49,6 +49,9 @@ def _parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--repo", default=".")
     apply_parser.add_argument("--plan", required=True)
     apply_parser.add_argument("--adapter", choices=("memory", "atlassian"), default="memory")
+    pull_parser = sync_subparsers.add_parser("pull")
+    pull_parser.add_argument("--repo", default=".")
+    pull_parser.add_argument("--adapter", choices=("memory", "atlassian"), default="atlassian")
     return parser
 
 
@@ -111,6 +114,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         except (OSError, ValueError, SyncError, RuntimeError) as error:
             print("SYNC: apply failed: {}".format(error), file=sys.stderr)
+            return 1
+    if args.domain == "sync" and args.operation == "pull":
+        try:
+            if args.adapter == "memory":
+                adapter = MemoryAdapter()
+            else:
+                adapter = AtlassianHttpAdapter({
+                    "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+                    "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
+                })
+            print(json.dumps(pull(Path(args.repo), adapter), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        except (OSError, ValueError, SyncError, RuntimeError, KeyError) as error:
+            print("SYNC: pull failed: {}".format(error), file=sys.stderr)
             return 1
     if args.domain != "gtd" or args.operation not in ("dispatch", "task"):
         _parser().print_help()

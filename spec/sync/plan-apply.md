@@ -28,6 +28,15 @@ never written.
 The adapter boundary supports a deterministic memory adapter for tests and an
 HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
 
+## Pull and conflicts
+
+`sync pull` reads external content and compares it with the last synchronized
+public Markdown body. If only one side changed, that side is accepted. If both
+local and external content changed, the public body receives standard conflict
+markers (`<<<<<<< local`, `=======`, `>>>>>>> external`) and the command
+reports a conflict without silently choosing a side. The local Implementation
+Note is preserved below the merged public body.
+
 ## Rendering rules
 
 - Task descriptions are rendered to Jira's document format by the adapter.

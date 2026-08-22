@@ -130,3 +130,28 @@ def markdown_to_storage(body: str) -> str:
     if in_code:
         output.append("<pre><code>{}</code></pre>".format(html.escape("\n".join(code_lines))))
     return "\n".join(output)
+
+
+def storage_to_markdown(storage: str) -> str:
+    value = storage.replace("\r\n", "\n")
+    value = re.sub(r"<h([1-6])>(.*?)</h\1>", lambda m: "#" * int(m.group(1)) + " " + html.unescape(m.group(2)) + "\n", value, flags=re.S)
+    value = re.sub(r"<p>(.*?)</p>", lambda m: html.unescape(m.group(1)) + "\n\n", value, flags=re.S)
+    value = re.sub(r"<br\s*/?>", "\n", value)
+    value = re.sub(r"<[^>]+>", "", value)
+    return canonical_body(value)
+
+
+def adf_to_markdown(document: Dict) -> str:
+    lines: List[str] = []
+    for block in document.get("content", []):
+        block_type = block.get("type")
+        if block_type == "paragraph":
+            lines.append("".join(item.get("text", "") for item in block.get("content", [])))
+            lines.append("")
+        elif block_type == "heading":
+            level = int(block.get("attrs", {}).get("level", 1))
+            lines.append("{} {}".format("#" * level, "".join(item.get("text", "") for item in block.get("content", []))))
+            lines.append("")
+        elif block_type == "codeBlock":
+            lines.extend(["```", "".join(item.get("text", "") for item in block.get("content", [])), "```", ""])
+    return canonical_body("\n".join(lines))

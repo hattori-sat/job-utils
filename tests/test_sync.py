@@ -7,7 +7,8 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from jobutils.markdown.normalize import markdown_to_storage, parse_document
 from jobutils.sync.adapters import MemoryAdapter
-from jobutils.sync.engine import SyncError, apply_plan, create_plan
+from jobutils.sync.engine import SyncError, apply_plan, create_plan, pull
+from jobutils.sync.references import externalize_references
 
 
 class SyncTests(unittest.TestCase):
@@ -72,6 +73,39 @@ publish_confluence: 'true'
         document = self.repo / "documents" / "guide.md"
         document.write_text("---\nkind: 'document'\ntitle: 'Guide'\n---\n\n# Guide\n", encoding="utf-8")
         self.assertEqual(parse_document(str(document)).metadata["kind"], "document")
+
+    def test_pull_marks_two_sided_change_for_vim_resolution(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text("""---
+gtd_id: 'doc-1'
+kind: 'document'
+title: 'Guide'
+publish_confluence: 'true'
+---
+
+# Guide
+
+Base content.
+""", encoding="utf-8")
+        plan = create_plan(self.repo)
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, plan, adapter)
+        path.write_text(path.read_text(encoding="utf-8").replace("Base content.", "Local content."), encoding="utf-8")
+        record = next(iter(adapter.records.values()))
+        record["payload"]["storage_body"] = "<h1>Guide</h1><p>Remote content.</p>"
+        result = pull(self.repo, adapter)
+        self.assertTrue(result[0]["conflict"])
+        merged = path.read_text(encoding="utf-8")
+        self.assertIn("<<<<<<< local", merged)
+        self.assertIn(">>>>>>> external", merged)
+
+    def test_relative_reference_uses_published_external_url(self):
+        target = self.repo / "documents" / "target.md"
+        target.write_text("---\nkind: 'document'\nconfluence_url: 'https://example.invalid/page'\n---\n\n# Target\n", encoding="utf-8")
+        source = self.repo / "gtd_tasks" / "task.md"
+        source.write_text("---\nkind: 'task'\n---\n\n[Target](../documents/target.md)\n", encoding="utf-8")
+        rendered = externalize_references(self.repo, "[Target](../documents/target.md)", source)
+        self.assertEqual(rendered, "[Target](https://example.invalid/page)")
 
 
 if __name__ == "__main__":

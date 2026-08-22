@@ -20,6 +20,8 @@ response shapes.
 - `sync apply --adapter memory` is deterministic for tests and local exercises.
 - `sync apply --adapter atlassian` reads credentials from environment variables
   and calls the current Atlassian Cloud REST endpoints.
+- `sync pull` imports external content and uses the saved public-body base for
+  a three-way merge. Conflict markers remain in Markdown for Vim resolution.
 
 The external adapter is deliberately not invoked by Vim's `:Gtd` command.
 GTD movement remains a local operation; synchronization is an explicit review
