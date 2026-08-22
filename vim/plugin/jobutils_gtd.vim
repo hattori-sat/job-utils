@@ -5,6 +5,10 @@ let g:loaded_jobutils_gtd = 1
 
 command! Gtd call jobutils#gtd#dispatch()
 command! GtdTask call jobutils#gtd#task()
+command! GtdTags call jobutils#gtd#catalog()
+command! GtdImpactLevels call jobutils#gtd#catalog()
+command! GtdMetricsHelp call jobutils#gtd#metrics_help()
+command! GtdReview call jobutils#gtd#review()
 
 augroup jobutils_gtd_detail_links
   autocmd!

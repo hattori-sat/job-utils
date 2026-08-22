@@ -232,12 +232,13 @@ def dispatch(
     delete_indices = {item.line_index for item in items}
     detail_writes: List[Tuple[Path, str]] = []
     detail_updates: List[Tuple[Path, TaskItem]] = []
-    events: List[Tuple[str, str, str]] = []
+    events: List[Tuple[str, str, str, List[str], Optional[str]]] = []
     created: List[Path] = []
 
     for item in items:
         link = item.link
         task_id_for_event = None
+        task_lines: List[str] = []
         if link:
             detail_path = _safe_link(repo_root, link)
             if not detail_path.is_file():
@@ -255,6 +256,7 @@ def dispatch(
             link = "gtd_tasks/{}.md".format(task_id)
             detail_path = _safe_link(repo_root, link)
             detail_writes.append((detail_path, _task_template(gtd_path, item.prefix, item.title, task_id)))
+            task_lines = _task_template(gtd_path, item.prefix, item.title, task_id).splitlines()
             created.append(detail_path)
 
         buckets[item.prefix].append(
@@ -262,7 +264,13 @@ def dispatch(
         )
         if item.source_prefix != item.prefix:
             if task_id_for_event:
-                events.append((task_id_for_event, item.source_prefix, item.prefix))
+                events.append((
+                    task_id_for_event,
+                    item.source_prefix,
+                    item.prefix,
+                    frontmatter.list_value(task_lines, "tags"),
+                    frontmatter.value(task_lines, "impact_level"),
+                ))
 
     new_lines = [line for index, line in enumerate(lines) if index not in delete_indices]
     for prefix in PREFIXES:
@@ -277,8 +285,11 @@ def dispatch(
     for path, item in detail_updates:
         _update_detail(path, item, gtd_path)
     event_count = 0
-    for task_id, from_prefix, to_prefix in events:
-        append_state_change(repo_root, task_id, from_prefix, to_prefix, command, machine_id)
+    for task_id, from_prefix, to_prefix, tags, impact_level in events:
+        append_state_change(
+            repo_root, task_id, from_prefix, to_prefix, command, machine_id,
+            tags=tags, impact_level=impact_level,
+        )
         event_count += 1
     return DispatchResult(gtd_path, len(items), created, event_count)
 

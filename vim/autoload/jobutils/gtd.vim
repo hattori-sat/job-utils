@@ -25,6 +25,17 @@ function! s:run(args) abort
   return {'ok': v:shell_error == 0, 'output': l:output}
 endfunction
 
+function! s:run_metrics(args) abort
+  let l:root = s:repo_root()
+  if empty(l:root)
+    return {'ok': 0, 'output': 'GTD: gtd.md was not found from the current file'}
+  endif
+  let l:command = shellescape(s:python_command()) . ' -m jobutils metrics ' . a:args
+        \ . ' --repo ' . shellescape(l:root)
+  let l:output = system(l:command)
+  return {'ok': v:shell_error == 0, 'output': l:output}
+endfunction
+
 function! s:show_error(output, fallback) abort
   echoerr a:fallback
   for l:line in split(a:output, '\n')
@@ -73,4 +84,39 @@ function! jobutils#gtd#follow_link() abort
     return
   endif
   execute 'hide edit ' . fnameescape(l:path)
+endfunction
+
+function! jobutils#gtd#catalog() abort
+  let l:result = s:run_metrics('catalog')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: metrics catalog failed')
+    return
+  endif
+  for l:line in split(l:result.output, '\n')
+    if !empty(l:line)
+      echom l:line
+    endif
+  endfor
+  echo 'GTD: catalog displayed in :messages'
+endfunction
+
+function! jobutils#gtd#metrics_help() abort
+  echo ':GtdReview  show the current-year task time summary'
+  echo ':GtdTags    show the standard tag catalog'
+  echo ':GtdImpactLevels  show impact levels'
+  echo ':GtdMetricsHelp  show these commands'
+endfunction
+
+function! jobutils#gtd#review() abort
+  let l:result = s:run_metrics('review')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: review failed')
+    return
+  endif
+  for l:line in split(l:result.output, '\n')
+    if !empty(l:line)
+      echom l:line
+    endif
+  endfor
+  echo 'GTD: review displayed in :messages'
 endfunction

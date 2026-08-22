@@ -22,6 +22,8 @@ def value(lines: List[str], key: str) -> Optional[str]:
         if not match:
             continue
         raw = match.group(1).strip()
+        if raw in ("null", "~"):
+            return None
         if len(raw) >= 2 and raw[0] == raw[-1] == "'":
             return raw[1:-1].replace("''", "'")
         if len(raw) >= 2 and raw[0] == raw[-1] == '"':
@@ -31,6 +33,18 @@ def value(lines: List[str], key: str) -> Optional[str]:
                 return raw[1:-1]
         return raw
     return None
+
+
+def list_value(lines: List[str], key: str) -> List[str]:
+    raw = value(lines, key)
+    if not raw or not (raw.startswith("[") and raw.endswith("]")):
+        return []
+    result = []
+    for part in raw[1:-1].split(","):
+        item = part.strip().strip("'\"")
+        if item:
+            result.append(item)
+    return result
 
 
 def quote(value_to_quote: str) -> str:
