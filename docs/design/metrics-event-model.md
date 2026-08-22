@@ -43,4 +43,3 @@ The event contract supports annual reviews and shorter explorations by:
 
 HTML, CSV, and SVG are generated on demand from these events. The source event
 files remain the portable, Git-friendly record.
-

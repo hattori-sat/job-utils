@@ -51,4 +51,3 @@ focus → cal
 
 The implementation records the transition and its timestamps. It does not
 reject a transition merely because it is not in the examples above.
-

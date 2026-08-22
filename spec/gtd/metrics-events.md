@@ -69,4 +69,3 @@ Reports derive these measures from the event stream:
 
 Counts are supporting context, not a performance score by themselves. Reports
 should combine volume, time, impact, task type, and representative outcomes.
-

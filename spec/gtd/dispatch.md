@@ -57,4 +57,3 @@ Every successful prefix change produces a metric event containing the previous
 and new prefixes. A failed dispatch produces an error event without changing
 the task state. `wait` starts waiting-time accounting; `cal` records scheduled
 intent and does not start waiting-time accounting.
-

@@ -41,4 +41,3 @@ an intake origin and is never a dispatch destination.
 
 The event stream, rather than the current section alone, is the source for
 cycle-time and flow analysis.
-
