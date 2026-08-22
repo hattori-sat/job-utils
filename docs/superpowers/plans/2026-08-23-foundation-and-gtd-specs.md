@@ -149,15 +149,15 @@
 **Interfaces:**
 - Each plan is independently testable and references the specifications created in Tasks 1–3.
 
-- [ ] **Step 1: Split the subsystems**
+- [x] **Step 1: Split the subsystems**
 
   Keep Vim/GTD dispatch, Python Markdown/Jira/Confluence synchronization, metrics/reporting, and cross-platform setup as separate plans.
 
-- [ ] **Step 2: Map implementation files and tests**
+- [x] **Step 2: Map implementation files and tests**
 
   For each plan, list exact files, public CLI/Vim interfaces, fixtures, unit tests, integration tests, and verification commands. Do not use placeholders such as `TBD` or “add appropriate tests.”
 
-- [ ] **Step 3: Run a plan coverage review**
+- [x] **Step 3: Run a plan coverage review**
 
   Confirm every requirement in `docs/requirements/overview.md` maps to exactly one follow-on plan and that no plan assumes an undocumented field or transition.
 
