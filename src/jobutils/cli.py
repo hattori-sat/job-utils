@@ -1,6 +1,7 @@
 import argparse
 from datetime import date
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -9,6 +10,8 @@ from .gtd import DispatchError, create_task, dispatch
 from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
+from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
+from .sync.engine import SyncError, apply_plan, create_plan, save_plan
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -37,6 +40,15 @@ def _parser() -> argparse.ArgumentParser:
     catalog_parser.add_argument("--repo", default=".")
     review_parser = metrics_subparsers.add_parser("review")
     review_parser.add_argument("--repo", default=".")
+    sync = subparsers.add_parser("sync")
+    sync_subparsers = sync.add_subparsers(dest="operation")
+    plan_parser = sync_subparsers.add_parser("plan")
+    plan_parser.add_argument("--repo", default=".")
+    plan_parser.add_argument("--output", default=None)
+    apply_parser = sync_subparsers.add_parser("apply")
+    apply_parser.add_argument("--repo", default=".")
+    apply_parser.add_argument("--plan", required=True)
+    apply_parser.add_argument("--adapter", choices=("memory", "atlassian"), default="memory")
     return parser
 
 
@@ -75,6 +87,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Scheduled hours: {:.2f}".format(summary["scheduled_seconds"] / 3600.0))
         print("Data errors: {}".format(len(summary["read_errors"])))
         return 1 if summary["read_errors"] else 0
+    if args.domain == "sync" and args.operation == "plan":
+        plan = create_plan(Path(args.repo))
+        path = Path(args.output) if args.output else save_plan(Path(args.repo), plan)
+        if args.output:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(path)
+        print(json.dumps({"plan_id": plan["plan_id"], "actions": len(plan["actions"])}, sort_keys=True))
+        return 0
+    if args.domain == "sync" and args.operation == "apply":
+        try:
+            plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+            if args.adapter == "memory":
+                adapter = MemoryAdapter()
+            else:
+                adapter = AtlassianHttpAdapter({
+                    "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+                    "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
+                })
+            results = apply_plan(Path(args.repo), plan, adapter)
+            print(json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        except (OSError, ValueError, SyncError, RuntimeError) as error:
+            print("SYNC: apply failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain != "gtd" or args.operation not in ("dispatch", "task"):
         _parser().print_help()
         return 2

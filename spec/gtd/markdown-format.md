@@ -20,16 +20,19 @@ tags: [delivery, planning]
 impact_level: medium
 impact_area: delivery
 estimate_minutes: 60
-external:
-  jira:
-    key: null
-    url: null
-  confluence:
-    page_id: null
-    url: null
-publish:
-  jira: false
-  confluence: false
+publish_jira: false
+jira_project: null
+jira_issue_type: Task
+jira_parent_key: null
+jira_key: null
+jira_url: null
+publish_confluence: false
+confluence_space_id: null
+confluence_space_key: null
+confluence_parent_id: null
+confluence_page_id: null
+confluence_url: null
+confluence_version: 0
 references: []
 ---
 ```
@@ -120,4 +123,3 @@ and optional external identities. Local Markdown renders the local relative
 path. External renderers replace it with a Confluence or Jira URL when the
 target is published; they never expose a private Markdown path. An unpublished
 target is rendered without a private path.
-

@@ -38,6 +38,8 @@ job-utils/
 - `docs/operations/`: setup, usage, and troubleshooting guidance.
 - `docs/adr/`: durable decisions with meaningful trade-offs.
 - `docs/agent/`: shared guidance for coding agents and maintainers.
+- `docs/setup/`: cross-platform setup and configuration examples.
+- `docs/skills/`: maintained AI skill catalog without auto-installation.
 - `skills/`: implementation resources for job-utils skill development.
 
 ## Separate GTD Repository

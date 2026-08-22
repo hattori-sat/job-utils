@@ -1,0 +1,128 @@
+import hashlib
+import json
+import os
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from jobutils.gtd import frontmatter
+from jobutils.markdown.normalize import markdown_to_storage, parse_document
+
+from .adapters import SyncAdapter
+from .references import externalize_references
+
+
+class SyncError(Exception):
+    pass
+
+
+def _bool(value: Optional[str]) -> bool:
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+
+def _source_hash(repo_root: Path, paths: List[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        digest.update(str(path.relative_to(repo_root)).encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _documents(repo_root: Path) -> List[Path]:
+    paths = list((repo_root / "gtd_tasks").rglob("*.md")) if (repo_root / "gtd_tasks").is_dir() else []
+    paths += list((repo_root / "documents").rglob("*.md")) if (repo_root / "documents").is_dir() else []
+    return sorted(paths)
+
+
+def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
+    document = parse_document(str(path))
+    body = externalize_references(repo_root, document.public_body)
+    if kind == "jira":
+        return {
+            "title": document.metadata.get("title") or path.stem,
+            "description_adf": {"version": 1, "type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": body}]}]},
+            "project": document.metadata.get("jira_project") or "",
+            "issue_type": document.metadata.get("jira_issue_type") or "Task",
+            "parent_key": document.metadata.get("jira_parent_key"),
+            "jira_key": document.metadata.get("jira_key"),
+            "jira_url": document.metadata.get("jira_url"),
+        }
+    return {
+        "title": document.metadata.get("title") or path.stem,
+        "storage_body": markdown_to_storage(body),
+        "space_id": document.metadata.get("confluence_space_id") or "",
+        "space_key": document.metadata.get("confluence_space_key") or "",
+        "parent_id": document.metadata.get("confluence_parent_id"),
+        "confluence_url": document.metadata.get("confluence_url"),
+        "version": int(document.metadata.get("confluence_version") or "0"),
+    }
+
+
+def create_plan(repo_root: Path) -> Dict:
+    repo_root = Path(repo_root).resolve()
+    paths = _documents(repo_root)
+    actions: List[Dict] = []
+    published_paths: List[Path] = []
+    for path in paths:
+        document = parse_document(str(path))
+        kind = "jira" if _bool(document.metadata.get("publish_jira")) else "confluence" if _bool(document.metadata.get("publish_confluence")) else ""
+        if not kind:
+            continue
+        published_paths.append(path)
+        external_id = document.metadata.get("jira_key") if kind == "jira" else document.metadata.get("confluence_page_id")
+        action = "update" if external_id else "create"
+        actions.append({
+            "action_id": str(uuid.uuid4()),
+            "action": action,
+            "kind": kind,
+            "path": str(path.relative_to(repo_root)).replace("\\", "/"),
+            "external_id": external_id,
+            "payload": _payload(repo_root, path, kind),
+        })
+    return {
+        "plan_id": str(uuid.uuid4()),
+        "created_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "source_hash": _source_hash(repo_root, published_paths),
+        "actions": actions,
+    }
+
+
+def save_plan(repo_root: Path, plan: Dict) -> Path:
+    path = Path(repo_root) / ".jobutils" / "sync" / "plans" / (plan["plan_id"] + ".json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _set_external(path: Path, kind: str, result: Dict) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if kind == "jira":
+        frontmatter.set_value(lines, "jira_key", result.get("key") or result.get("id") or "")
+        frontmatter.set_value(lines, "jira_url", result.get("url") or "")
+    else:
+        frontmatter.set_value(lines, "confluence_page_id", str(result.get("id") or ""))
+        frontmatter.set_value(lines, "confluence_url", result.get("url") or "")
+    frontmatter.set_value(lines, "sync_hash", hashlib.sha256(path.read_bytes()).hexdigest())
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    os.replace(str(temporary), str(path))
+
+
+def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
+    repo_root = Path(repo_root).resolve()
+    paths = [repo_root / action["path"] for action in plan.get("actions", [])]
+    if _source_hash(repo_root, paths) != plan.get("source_hash"):
+        raise SyncError("sync plan is stale; create a new plan")
+    results = []
+    for action in plan.get("actions", []):
+        path = repo_root / action["path"]
+        payload = action["payload"]
+        if action["action"] == "create":
+            result = adapter.create(action["kind"], payload)
+        else:
+            result = adapter.update(action["kind"], action["external_id"], payload)
+        _set_external(path, action["kind"], result)
+        results.append({"action_id": action["action_id"], "path": action["path"], "result": result})
+    return results
