@@ -1,3 +1,5 @@
+"""Resolve local Markdown references to published external URLs."""
+
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -5,19 +7,28 @@ from jobutils.markdown.normalize import public_markdown_links
 
 
 def published_reference_map(repo_root: Path) -> Dict[str, str]:
+    """Index published Markdown files by their repository-relative paths."""
+
     result: Dict[str, str] = {}
     for path in Path(repo_root).rglob("*.md"):
         if ".jobutils" in path.parts:
             continue
         text = path.read_text(encoding="utf-8").splitlines()
         from jobutils.gtd import frontmatter
-        url = frontmatter.value(text, "confluence_url") or frontmatter.value(text, "jira_url")
+
+        url = frontmatter.value(text, "confluence_url") or frontmatter.value(
+            text, "jira_url"
+        )
         if url:
             result[str(path.relative_to(repo_root)).replace("\\", "/")] = url
     return result
 
 
-def externalize_references(repo_root: Path, body: str, source_path: Optional[Path] = None) -> str:
+def externalize_references(
+    repo_root: Path, body: str, source_path: Optional[Path] = None
+) -> str:
+    """Replace resolvable local links without exposing private paths."""
+
     published = published_reference_map(repo_root)
     if source_path is None:
         return public_markdown_links(body, published)

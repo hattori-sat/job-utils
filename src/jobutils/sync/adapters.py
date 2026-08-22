@@ -1,3 +1,5 @@
+"""Memory and Atlassian HTTP adapters behind the synchronization engine."""
+
 import base64
 import json
 import os
@@ -5,10 +7,16 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 from urllib import request
 
-from jobutils.markdown.normalize import adf_to_markdown, markdown_to_storage, storage_to_markdown
+from jobutils.markdown.normalize import (
+    adf_to_markdown,
+    markdown_to_storage,
+    storage_to_markdown,
+)
 
 
 class SyncAdapter(ABC):
+    """Interface implemented by local test and remote synchronization adapters."""
+
     @abstractmethod
     def create(self, kind: str, payload: Dict) -> Dict:
         raise NotImplementedError
@@ -26,30 +34,51 @@ class MemoryAdapter(SyncAdapter):
     """Deterministic adapter for tests and dry-run development."""
 
     def __init__(self):
+        """Initialize an isolated in-memory record store."""
+
         self.records = {}
         self.counter = 0
 
     def create(self, kind: str, payload: Dict) -> Dict:
+        """Create a deterministic record and return its external identity."""
+
         self.counter += 1
         identifier = "MEM-{}".format(self.counter)
         url = "https://memory.invalid/{}/{}".format(kind, identifier)
         self.records[identifier] = {"kind": kind, "payload": payload, "url": url}
-        return {"id": identifier, "key": identifier if kind == "jira" else None, "url": url}
+        return {
+            "id": identifier,
+            "key": identifier if kind == "jira" else None,
+            "url": url,
+        }
 
     def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
+        """Replace an existing in-memory payload."""
+
         if external_id not in self.records:
             raise ValueError("external record does not exist: {}".format(external_id))
         self.records[external_id]["payload"] = payload
-        return {"id": external_id, "key": external_id if kind == "jira" else None, "url": self.records[external_id]["url"]}
+        return {
+            "id": external_id,
+            "key": external_id if kind == "jira" else None,
+            "url": self.records[external_id]["url"],
+        }
 
     def fetch(self, kind: str, external_id: str) -> Dict:
+        """Return an in-memory record converted back to Markdown."""
+
         record = self.records[external_id]
         payload = record["payload"]
         if kind == "jira":
             body = adf_to_markdown(payload.get("description_adf", {}))
         else:
             body = storage_to_markdown(payload.get("storage_body", ""))
-        return {"id": external_id, "title": payload.get("title", ""), "body_markdown": body, "url": record["url"]}
+        return {
+            "id": external_id,
+            "title": payload.get("title", ""),
+            "body_markdown": body,
+            "url": record["url"],
+        }
 
 
 class AtlassianHttpAdapter(SyncAdapter):
@@ -60,14 +89,28 @@ class AtlassianHttpAdapter(SyncAdapter):
     """
 
     def __init__(self, config: Dict[str, str]):
+        """Store non-secret endpoint configuration for later requests."""
+
         self.config = config
 
-    def _request(self, base_url: str, path: str, email_key: str, token_key: str, method: str, body: Dict) -> Dict:
+    def _request(
+        self,
+        base_url: str,
+        path: str,
+        email_key: str,
+        token_key: str,
+        method: str,
+        body: Dict,
+    ) -> Dict:
+        """Send one authenticated JSON request using environment credentials."""
+
         email = os.environ.get(email_key)
         token = os.environ.get(token_key)
         if not email or not token:
             raise RuntimeError("missing Atlassian credentials in environment")
-        raw_auth = base64.b64encode((email + ":" + token).encode("utf-8")).decode("ascii")
+        raw_auth = base64.b64encode((email + ":" + token).encode("utf-8")).decode(
+            "ascii"
+        )
         data = json.dumps(body).encode("utf-8")
         req = request.Request(base_url.rstrip("/") + path, data=data, method=method)
         req.add_header("Authorization", "Basic " + raw_auth)
@@ -78,6 +121,8 @@ class AtlassianHttpAdapter(SyncAdapter):
             return json.loads(raw) if raw else {}
 
     def create(self, kind: str, payload: Dict) -> Dict:
+        """Create a Jira issue or Confluence page."""
+
         if kind == "jira":
             fields = {
                 "project": {"key": payload["project"]},
@@ -85,13 +130,28 @@ class AtlassianHttpAdapter(SyncAdapter):
                 "issuetype": {"name": payload["issue_type"]},
                 "description": payload["description_adf"],
             }
-            if payload.get("progress_comment_field") and payload.get("progress_comment"):
+            if payload.get("progress_comment_field") and payload.get(
+                "progress_comment"
+            ):
                 fields[payload["progress_comment_field"]] = payload["progress_comment"]
             body = {"fields": fields}
             if payload.get("parent_key"):
                 body["fields"]["parent"] = {"key": payload["parent_key"]}
-            result = self._request(self.config["jira_base_url"], "/rest/api/3/issue", "JIRA_EMAIL", "JIRA_API_TOKEN", "POST", body)
-            return {"id": result.get("id"), "key": result.get("key"), "url": self.config["jira_base_url"].rstrip("/") + "/browse/" + result.get("key", "")}
+            result = self._request(
+                self.config["jira_base_url"],
+                "/rest/api/3/issue",
+                "JIRA_EMAIL",
+                "JIRA_API_TOKEN",
+                "POST",
+                body,
+            )
+            return {
+                "id": result.get("id"),
+                "key": result.get("key"),
+                "url": self.config["jira_base_url"].rstrip("/")
+                + "/browse/"
+                + result.get("key", ""),
+            }
         body = {
             "spaceId": payload["space_id"],
             "status": "current",
@@ -99,18 +159,51 @@ class AtlassianHttpAdapter(SyncAdapter):
             "parentId": payload.get("parent_id"),
             "body": {"representation": "storage", "value": payload["storage_body"]},
         }
-        result = self._request(self.config["confluence_base_url"], "/wiki/api/v2/pages", "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN", "POST", body)
+        result = self._request(
+            self.config["confluence_base_url"],
+            "/wiki/api/v2/pages",
+            "CONFLUENCE_EMAIL",
+            "CONFLUENCE_API_TOKEN",
+            "POST",
+            body,
+        )
         page_id = str(result.get("id"))
-        return {"id": page_id, "key": None, "url": self.config["confluence_base_url"].rstrip("/") + "/wiki/spaces/" + str(payload["space_key"]) + "/pages/" + page_id}
+        return {
+            "id": page_id,
+            "key": None,
+            "url": self.config["confluence_base_url"].rstrip("/")
+            + "/wiki/spaces/"
+            + str(payload["space_key"])
+            + "/pages/"
+            + page_id,
+        }
 
     def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
+        """Update a Jira issue or Confluence page by stable identity."""
+
         if kind == "jira":
-            fields = {"summary": payload["title"], "description": payload["description_adf"]}
-            if payload.get("progress_comment_field") and payload.get("progress_comment"):
+            fields = {
+                "summary": payload["title"],
+                "description": payload["description_adf"],
+            }
+            if payload.get("progress_comment_field") and payload.get(
+                "progress_comment"
+            ):
                 fields[payload["progress_comment_field"]] = payload["progress_comment"]
             body = {"fields": fields}
-            result = self._request(self.config["jira_base_url"], "/rest/api/3/issue/" + external_id, "JIRA_EMAIL", "JIRA_API_TOKEN", "PUT", body)
-            return {"id": external_id, "key": payload.get("jira_key", external_id), "url": payload.get("jira_url")}
+            result = self._request(
+                self.config["jira_base_url"],
+                "/rest/api/3/issue/" + external_id,
+                "JIRA_EMAIL",
+                "JIRA_API_TOKEN",
+                "PUT",
+                body,
+            )
+            return {
+                "id": external_id,
+                "key": payload.get("jira_key", external_id),
+                "url": payload.get("jira_url"),
+            }
         body = {
             "id": external_id,
             "status": "current",
@@ -118,14 +211,51 @@ class AtlassianHttpAdapter(SyncAdapter):
             "body": {"representation": "storage", "value": payload["storage_body"]},
             "version": {"number": payload["version"] + 1},
         }
-        self._request(self.config["confluence_base_url"], "/wiki/api/v2/pages/" + external_id, "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN", "PUT", body)
+        self._request(
+            self.config["confluence_base_url"],
+            "/wiki/api/v2/pages/" + external_id,
+            "CONFLUENCE_EMAIL",
+            "CONFLUENCE_API_TOKEN",
+            "PUT",
+            body,
+        )
         return {"id": external_id, "key": None, "url": payload.get("confluence_url")}
 
     def fetch(self, kind: str, external_id: str) -> Dict:
+        """Fetch and convert an external item into Markdown-compatible text."""
+
         if kind == "jira":
-            result = self._request(self.config["jira_base_url"], "/rest/api/3/issue/" + external_id, "JIRA_EMAIL", "JIRA_API_TOKEN", "GET", {})
+            result = self._request(
+                self.config["jira_base_url"],
+                "/rest/api/3/issue/" + external_id,
+                "JIRA_EMAIL",
+                "JIRA_API_TOKEN",
+                "GET",
+                {},
+            )
             fields = result.get("fields", {})
-            return {"id": external_id, "title": fields.get("summary", ""), "body_markdown": adf_to_markdown(fields.get("description", {})), "url": self.config["jira_base_url"].rstrip("/") + "/browse/" + external_id}
-        result = self._request(self.config["confluence_base_url"], "/wiki/api/v2/pages/" + external_id + "?body-format=storage", "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN", "GET", {})
+            return {
+                "id": external_id,
+                "title": fields.get("summary", ""),
+                "body_markdown": adf_to_markdown(fields.get("description", {})),
+                "url": self.config["jira_base_url"].rstrip("/")
+                + "/browse/"
+                + external_id,
+            }
+        result = self._request(
+            self.config["confluence_base_url"],
+            "/wiki/api/v2/pages/" + external_id + "?body-format=storage",
+            "CONFLUENCE_EMAIL",
+            "CONFLUENCE_API_TOKEN",
+            "GET",
+            {},
+        )
         body = result.get("body", {}).get("storage", {}).get("value", "")
-        return {"id": external_id, "title": result.get("title", ""), "body_markdown": storage_to_markdown(body), "url": self.config["confluence_base_url"].rstrip("/") + "/wiki/pages/" + external_id}
+        return {
+            "id": external_id,
+            "title": result.get("title", ""),
+            "body_markdown": storage_to_markdown(body),
+            "url": self.config["confluence_base_url"].rstrip("/")
+            + "/wiki/pages/"
+            + external_id,
+        }

@@ -10,7 +10,9 @@ from jobutils.gtd.parser import scan_items, split_title_link
 
 class GtdParserTests(unittest.TestCase):
     def test_split_title_and_link(self):
-        self.assertEqual(split_title_link("A task <gtd_tasks/a.md>"), ("A task", "gtd_tasks/a.md"))
+        self.assertEqual(
+            split_title_link("A task <gtd_tasks/a.md>"), ("A task", "gtd_tasks/a.md")
+        )
         self.assertEqual(split_title_link("A task"), ("A task", None))
 
     def test_unprefixed_item_uses_section_prefix(self):
@@ -23,6 +25,11 @@ class GtdParserTests(unittest.TestCase):
         items, prefixed = scan_items(["## Today", "", "- custom: Keep this"])
         self.assertEqual(items, [])
         self.assertEqual(prefixed, [(2, "custom")])
+
+    def test_pointer_is_not_a_dispatch_prefix(self):
+        items, prefixed = scan_items(["## Today", "", "- pointer: Keep this"])
+        self.assertEqual(items, [])
+        self.assertEqual(prefixed, [(2, "pointer")])
 
     def test_focus_section_is_known(self):
         self.assertEqual(SECTION_TO_PREFIX["Focus"], "focus")

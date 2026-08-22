@@ -21,7 +21,8 @@ class GtdDispatchTests(unittest.TestCase):
         (self.repo / "gtd.md").write_text(content, encoding="utf-8")
 
     def test_dispatch_creates_uuid_detail_and_preserves_sections(self):
-        self.write_gtd("""# GTD
+        self.write_gtd(
+            """# GTD
 
 ## Inbox
 
@@ -30,7 +31,8 @@ class GtdDispatchTests(unittest.TestCase):
 ## Today
 
 - focus: Read the design
-""")
+"""
+        )
         result = dispatch(self.repo)
         self.assertEqual(result.moved, 1)
         gtd = (self.repo / "gtd.md").read_text(encoding="utf-8")
@@ -42,6 +44,9 @@ class GtdDispatchTests(unittest.TestCase):
         self.assertIn("kind: 'task'", detail)
         self.assertIn("prefix: 'focus'", detail)
         self.assertIn("# Implementation Note", detail)
+        self.assertNotIn("gtd_file:", detail)
+        self.assertNotIn("publish_jira:", detail)
+        self.assertNotIn("publish_confluence:", detail)
 
     def test_focus_overflow_is_atomic(self):
         lines = ["# GTD", "", "## Focus", ""]
@@ -63,7 +68,8 @@ class GtdDispatchTests(unittest.TestCase):
         self.write_gtd("# GTD\n\n## Today\n\n- focus: Work <gtd_tasks/task.md>\n")
         detail = self.repo / "gtd_tasks" / "task.md"
         detail.parent.mkdir()
-        detail.write_text("""---
+        detail.write_text(
+            """---
 gtd_id: 'task-1'
 prefix: 'today'
 status: 'in_progress'
@@ -71,7 +77,9 @@ title: 'Work'
 ---
 
 # Work
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         self.write_gtd("# GTD\n\n## Today\n\n- focus: Work <gtd_tasks/task.md>\n")
         result = dispatch(self.repo, machine_id="test-machine")
         self.assertEqual(result.event_count, 1)

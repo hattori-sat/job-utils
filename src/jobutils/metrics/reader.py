@@ -1,9 +1,13 @@
+"""Read and validate yearly JSONL metric event files."""
+
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 
 def event_paths(repo_root: Path) -> List[Path]:
+    """Return existing yearly event files in stable order."""
+
     directory = Path(repo_root) / ".jobutils" / "metrics" / "events"
     if not directory.is_dir():
         return []
@@ -11,11 +15,15 @@ def event_paths(repo_root: Path) -> List[Path]:
 
 
 def read_events(repo_root: Path) -> Tuple[List[Dict], List[str]]:
+    """Load unique valid events and collect non-fatal data errors."""
+
     events: List[Dict] = []
     errors: List[str] = []
     seen = set()
     for path in event_paths(repo_root):
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), 1
+        ):
             if not line.strip():
                 continue
             try:
@@ -30,7 +38,9 @@ def read_events(repo_root: Path) -> Tuple[List[Dict], List[str]]:
                 errors.append("{}:{}: missing event_id".format(path, line_number))
                 continue
             if not event.get("gtd_id") or not event.get("occurred_at"):
-                errors.append("{}:{}: missing gtd_id or occurred_at".format(path, line_number))
+                errors.append(
+                    "{}:{}: missing gtd_id or occurred_at".format(path, line_number)
+                )
                 continue
             seen.add(event_id)
             events.append(event)

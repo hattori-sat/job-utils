@@ -17,7 +17,6 @@ Vim `:Gtd` command.
 | `cal` | Calendar | Work associated with a scheduled date or time. |
 | `someday` | Someday | A possible item with no current commitment. |
 | `project` | Projects | A multi-step outcome or project container. |
-| `pointer` | Pointer | A reference or supporting pointer retained in the GTD index. |
 | `done` | Done | An item whose work is complete. |
 
 Inbox is an intake location, not a dispatch prefix. Display labels may be

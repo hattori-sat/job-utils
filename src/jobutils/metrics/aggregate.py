@@ -1,3 +1,5 @@
+"""Aggregate state-change events into task time and flow measurements."""
+
 from datetime import datetime, timezone
 from typing import Dict, Iterable, Optional
 
@@ -6,35 +8,50 @@ ACTIVE_PREFIXES = {"today", "focus"}
 
 
 def parse_timestamp(value: str) -> datetime:
+    """Parse an ISO timestamp and default naive values to UTC."""
+
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
 
 
-def _overlap_seconds(start: datetime, end: datetime, report_start: datetime, report_end: datetime) -> int:
+def _overlap_seconds(
+    start: datetime, end: datetime, report_start: datetime, report_end: datetime
+) -> int:
+    """Return the seconds shared by an interval and the report window."""
+
     left = max(start, report_start)
     right = min(end, report_end)
     return max(0, int((right - left).total_seconds()))
 
 
-def aggregate(events: Iterable[Dict], report_start: datetime, report_end: datetime) -> Dict:
+def aggregate(
+    events: Iterable[Dict], report_start: datetime, report_end: datetime
+) -> Dict:
+    """Build task-level metrics from an ordered stream of state changes."""
+
     tasks: Dict[str, Dict] = {}
-    ordered = sorted(events, key=lambda event: (event["occurred_at"], event["event_id"]))
+    ordered = sorted(
+        events, key=lambda event: (event["occurred_at"], event["event_id"])
+    )
     for event in ordered:
         task_id = event["gtd_id"]
-        task = tasks.setdefault(task_id, {
-            "gtd_id": task_id,
-            "active_seconds": 0,
-            "waiting_seconds": 0,
-            "scheduled_seconds": 0,
-            "transitions": 0,
-            "final_prefix": None,
-            "first_event_at": None,
-            "completed_at": None,
-            "tags": [],
-            "impact_level": None,
-        })
+        task = tasks.setdefault(
+            task_id,
+            {
+                "gtd_id": task_id,
+                "active_seconds": 0,
+                "waiting_seconds": 0,
+                "scheduled_seconds": 0,
+                "transitions": 0,
+                "final_prefix": None,
+                "first_event_at": None,
+                "completed_at": None,
+                "tags": [],
+                "impact_level": None,
+            },
+        )
         occurred = parse_timestamp(event["occurred_at"])
         if task["first_event_at"] is None:
             task["first_event_at"] = occurred
@@ -68,7 +85,9 @@ def aggregate(events: Iterable[Dict], report_start: datetime, report_end: dateti
     for task in tasks.values():
         last_state_at = task.pop("last_state_at", None)
         if last_state_at is not None and task["final_prefix"] != "done":
-            seconds = _overlap_seconds(last_state_at, report_end, report_start, report_end)
+            seconds = _overlap_seconds(
+                last_state_at, report_end, report_start, report_end
+            )
             if task["final_prefix"] in ACTIVE_PREFIXES:
                 task["active_seconds"] += seconds
             elif task["final_prefix"] == "wait":

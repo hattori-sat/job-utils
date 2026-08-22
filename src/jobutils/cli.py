@@ -1,3 +1,5 @@
+"""Command-line entry points for GTD, metrics, and synchronization tasks."""
+
 import argparse
 from datetime import date
 import json
@@ -15,6 +17,8 @@ from .sync.engine import SyncError, apply_plan, create_plan, pull, save_plan
 
 
 def _parser() -> argparse.ArgumentParser:
+    """Build the cross-platform command-line parser."""
+
     parser = argparse.ArgumentParser(prog="jobutils")
     subparsers = parser.add_subparsers(dest="domain")
     gtd = subparsers.add_parser("gtd")
@@ -48,19 +52,27 @@ def _parser() -> argparse.ArgumentParser:
     apply_parser = sync_subparsers.add_parser("apply")
     apply_parser.add_argument("--repo", default=".")
     apply_parser.add_argument("--plan", required=True)
-    apply_parser.add_argument("--adapter", choices=("memory", "atlassian"), default="memory")
+    apply_parser.add_argument(
+        "--adapter", choices=("memory", "atlassian"), default="memory"
+    )
     pull_parser = sync_subparsers.add_parser("pull")
     pull_parser.add_argument("--repo", default=".")
-    pull_parser.add_argument("--adapter", choices=("memory", "atlassian"), default="atlassian")
+    pull_parser.add_argument(
+        "--adapter", choices=("memory", "atlassian"), default="atlassian"
+    )
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """Execute a command and return a shell-compatible exit status."""
+
     args = _parser().parse_args(argv)
     if args.domain == "metrics" and args.operation == "report":
         formats = [value.strip() for value in args.format.split(",") if value.strip()]
         output_dir = Path(args.output_dir) if args.output_dir else None
-        paths = write_reports(Path(args.repo), args.start, args.end, formats, output_dir)
+        paths = write_reports(
+            Path(args.repo), args.start, args.end, formats, output_dir
+        )
         for path in paths:
             print(path)
         return 0
@@ -81,6 +93,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         start = "{}-01-01".format(date.today().year)
         end = date.today().isoformat()
         from .metrics.reports import build_report
+
         summary = build_report(Path(args.repo), start, end)
         print("GTD review")
         print("Tasks with records: {}".format(summary["task_count"]))
@@ -95,9 +108,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         path = Path(args.output) if args.output else save_plan(Path(args.repo), plan)
         if args.output:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            path.write_text(
+                json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         print(path)
-        print(json.dumps({"plan_id": plan["plan_id"], "actions": len(plan["actions"])}, sort_keys=True))
+        print(
+            json.dumps(
+                {"plan_id": plan["plan_id"], "actions": len(plan["actions"])},
+                sort_keys=True,
+            )
+        )
         return 0
     if args.domain == "sync" and args.operation == "apply":
         try:
@@ -105,10 +126,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args.adapter == "memory":
                 adapter = MemoryAdapter()
             else:
-                adapter = AtlassianHttpAdapter({
-                    "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-                    "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
-                })
+                adapter = AtlassianHttpAdapter(
+                    {
+                        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+                        "confluence_base_url": os.environ.get(
+                            "CONFLUENCE_BASE_URL", ""
+                        ),
+                    }
+                )
             results = apply_plan(Path(args.repo), plan, adapter)
             print(json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
@@ -120,11 +145,22 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args.adapter == "memory":
                 adapter = MemoryAdapter()
             else:
-                adapter = AtlassianHttpAdapter({
-                    "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-                    "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
-                })
-            print(json.dumps(pull(Path(args.repo), adapter), ensure_ascii=False, indent=2, sort_keys=True))
+                adapter = AtlassianHttpAdapter(
+                    {
+                        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+                        "confluence_base_url": os.environ.get(
+                            "CONFLUENCE_BASE_URL", ""
+                        ),
+                    }
+                )
+            print(
+                json.dumps(
+                    pull(Path(args.repo), adapter),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
         except (OSError, ValueError, SyncError, RuntimeError, KeyError) as error:
             print("SYNC: pull failed: {}".format(error), file=sys.stderr)
@@ -137,12 +173,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         if args.operation == "dispatch":
             result = dispatch(repo, gtd_path, args.machine_id)
-            print(json.dumps({
-                "gtd_path": str(result.gtd_path),
-                "moved": result.moved,
-                "created": [str(path) for path in result.created],
-                "event_count": result.event_count,
-            }, ensure_ascii=False, sort_keys=True))
+            print(
+                json.dumps(
+                    {
+                        "gtd_path": str(result.gtd_path),
+                        "moved": result.moved,
+                        "created": [str(path) for path in result.created],
+                        "event_count": result.event_count,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
         else:
             print(str(create_task(repo, args.line, gtd_path)))
         return 0

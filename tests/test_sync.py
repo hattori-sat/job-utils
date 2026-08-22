@@ -23,7 +23,8 @@ class SyncTests(unittest.TestCase):
 
     def test_plan_and_apply_exclude_implementation_notes(self):
         path = self.repo / "documents" / "guide.md"
-        path.write_text("""---
+        path.write_text(
+            """---
 gtd_id: 'doc-1'
 kind: 'document'
 title: 'Guide'
@@ -39,10 +40,14 @@ Visible content.
 # Implementation Note
 
 Private content.
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         plan = create_plan(self.repo)
         self.assertEqual(len(plan["actions"]), 1)
-        self.assertNotIn("Private content", plan["actions"][0]["payload"]["storage_body"])
+        self.assertNotIn(
+            "Private content", plan["actions"][0]["payload"]["storage_body"]
+        )
         adapter = MemoryAdapter()
         result = apply_plan(self.repo, plan, adapter)
         self.assertEqual(len(result), 1)
@@ -52,7 +57,8 @@ Private content.
 
     def test_stale_plan_is_rejected(self):
         path = self.repo / "documents" / "guide.md"
-        path.write_text("""---
+        path.write_text(
+            """---
 gtd_id: 'doc-1'
 kind: 'document'
 title: 'Guide'
@@ -60,23 +66,32 @@ publish_confluence: 'true'
 ---
 
 # Guide
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         plan = create_plan(self.repo)
-        path.write_text(path.read_text(encoding="utf-8") + "\nChanged.\n", encoding="utf-8")
+        path.write_text(
+            path.read_text(encoding="utf-8") + "\nChanged.\n", encoding="utf-8"
+        )
         with self.assertRaises(SyncError):
             apply_plan(self.repo, plan, MemoryAdapter())
 
     def test_markdown_renderer_keeps_authoring_model(self):
-        rendered = markdown_to_storage("# Title\n\n:::confluence-macro name=info\nBody\n:::\n")
+        rendered = markdown_to_storage(
+            "# Title\n\n:::confluence-macro name=info\nBody\n:::\n"
+        )
         self.assertIn("<h1>Title</h1>", rendered)
         self.assertIn("ac:structured-macro", rendered)
         document = self.repo / "documents" / "guide.md"
-        document.write_text("---\nkind: 'document'\ntitle: 'Guide'\n---\n\n# Guide\n", encoding="utf-8")
+        document.write_text(
+            "---\nkind: 'document'\ntitle: 'Guide'\n---\n\n# Guide\n", encoding="utf-8"
+        )
         self.assertEqual(parse_document(str(document)).metadata["kind"], "document")
 
     def test_pull_marks_two_sided_change_for_vim_resolution(self):
         path = self.repo / "documents" / "guide.md"
-        path.write_text("""---
+        path.write_text(
+            """---
 gtd_id: 'doc-1'
 kind: 'document'
 title: 'Guide'
@@ -86,11 +101,16 @@ publish_confluence: 'true'
 # Guide
 
 Base content.
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         plan = create_plan(self.repo)
         adapter = MemoryAdapter()
         apply_plan(self.repo, plan, adapter)
-        path.write_text(path.read_text(encoding="utf-8").replace("Base content.", "Local content."), encoding="utf-8")
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("Base content.", "Local content."),
+            encoding="utf-8",
+        )
         record = next(iter(adapter.records.values()))
         record["payload"]["storage_body"] = "<h1>Guide</h1><p>Remote content.</p>"
         result = pull(self.repo, adapter)
@@ -101,15 +121,24 @@ Base content.
 
     def test_relative_reference_uses_published_external_url(self):
         target = self.repo / "documents" / "target.md"
-        target.write_text("---\nkind: 'document'\nconfluence_url: 'https://example.invalid/page'\n---\n\n# Target\n", encoding="utf-8")
+        target.write_text(
+            "---\nkind: 'document'\nconfluence_url: 'https://example.invalid/page'\n---\n\n# Target\n",
+            encoding="utf-8",
+        )
         source = self.repo / "gtd_tasks" / "task.md"
-        source.write_text("---\nkind: 'task'\n---\n\n[Target](../documents/target.md)\n", encoding="utf-8")
-        rendered = externalize_references(self.repo, "[Target](../documents/target.md)", source)
+        source.write_text(
+            "---\nkind: 'task'\n---\n\n[Target](../documents/target.md)\n",
+            encoding="utf-8",
+        )
+        rendered = externalize_references(
+            self.repo, "[Target](../documents/target.md)", source
+        )
         self.assertEqual(rendered, "[Target](https://example.invalid/page)")
 
     def test_jira_payload_keeps_progress_comment_as_configured_text_field(self):
         path = self.repo / "gtd_tasks" / "task.md"
-        path.write_text("""---
+        path.write_text(
+            """---
 gtd_id: 'task-1'
 kind: 'task'
 title: 'Task'
@@ -129,7 +158,9 @@ Summary.
 # Objective
 
 Objective.
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         plan = create_plan(self.repo)
         payload = plan["actions"][0]["payload"]
         self.assertEqual(payload["progress_comment_field"], "customfield_12345")

@@ -1,3 +1,5 @@
+"""Append-only JSONL event recording for task and synchronization metrics."""
+
 import json
 import os
 import uuid
@@ -7,6 +9,8 @@ from typing import Any, Dict, Optional
 
 
 def utc_timestamp() -> str:
+    """Return the current UTC timestamp with second precision."""
+
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
@@ -16,15 +20,18 @@ def append_event(
     gtd_id: str,
     occurred_at: Optional[str] = None,
     source: Optional[Dict[str, str]] = None,
-    **fields: Any
+    **fields: Any,
 ) -> Path:
+    """Append one event to the JSONL file for its calendar year."""
+
     timestamp = occurred_at or utc_timestamp()
     event: Dict[str, Any] = {
         "event_id": str(uuid.uuid4()),
         "event_type": event_type,
         "occurred_at": timestamp,
         "gtd_id": gtd_id,
-        "source": source or {
+        "source": source
+        or {
             "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
             "command": "unknown",
         },
@@ -47,6 +54,8 @@ def append_state_change(
     tags: Optional[list] = None,
     impact_level: Optional[str] = None,
 ) -> Path:
+    """Record a prefix transition with the task's current taxonomy values."""
+
     occurred_at = utc_timestamp()
     fields: Dict[str, Any] = {
         "from": {"prefix": from_prefix},
@@ -62,8 +71,9 @@ def append_state_change(
         gtd_id,
         occurred_at=occurred_at,
         source={
-            "machine_id": machine_id or os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+            "machine_id": machine_id
+            or os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
             "command": command,
         },
-        **fields
+        **fields,
     )

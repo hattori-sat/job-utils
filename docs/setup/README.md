@@ -14,6 +14,14 @@ python -m pip install --editable .
 Use `python3` on systems where `python` names another interpreter. The package
 uses the Python standard library and supports Python 3.8 or newer.
 
+For development formatting, install the pinned development tool and run:
+
+```text
+python -m pip install -r requirements-dev.txt
+python -m black src tests
+python -m black --check src tests
+```
+
 ## Enable the Vim commands
 
 Add the repository's Vim directory to Vim's runtime path and select the Python

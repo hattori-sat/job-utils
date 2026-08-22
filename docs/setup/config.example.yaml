@@ -1,4 +1,4 @@
-# Copy the relevant keys into task/document front matter as needed.
+# Copy only the relevant keys into task/document front matter for a published item.
 # Credentials belong in the process environment, never in this file.
 
 publish_jira: false

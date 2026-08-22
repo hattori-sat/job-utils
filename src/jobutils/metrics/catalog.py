@@ -1,3 +1,5 @@
+"""Shared tag and impact-level vocabulary used by reports and Vim."""
+
 DEFAULT_TAGS = (
     "delivery",
     "planning",

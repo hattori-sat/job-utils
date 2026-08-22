@@ -1,3 +1,5 @@
+"""Run the job-utils command line interface as a Python module."""
+
 from .cli import main
 
 

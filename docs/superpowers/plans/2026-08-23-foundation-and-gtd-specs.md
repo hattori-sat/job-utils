@@ -42,7 +42,7 @@
 
 - [x] **Step 1: Write the domain vocabulary**
 
-  Define only these canonical terms in `CONTEXT.md`: GTD Repository, job-utils Repository, Inbox, Next, Today, Focus, Waiting, Calendar, Someday, Project, Pointer, Task Markdown, Document Markdown, External Identity, Sync Plan, Sync Apply, Metric Event.
+  Define only these canonical terms in `CONTEXT.md`: GTD Repository, job-utils Repository, Inbox, Next, Today, Focus, Waiting, Calendar, Someday, Project, Task Markdown, Document Markdown, External Identity, Sync Plan, Sync Apply, Metric Event.
 
 - [x] **Step 2: Write the repository boundary**
 
@@ -80,7 +80,7 @@
 
 - [x] **Step 1: Define the prefix vocabulary**
 
-  Specify `next`, `today`, `focus`, `wait`, `cal`, `someday`, `project`, `pointer`, and `done`, with the user-facing Japanese review labels separated from English front matter values.
+  Specify `next`, `today`, `focus`, `wait`, `cal`, `someday`, `project`, and `done`, with the user-facing Japanese review labels separated from English front matter values.
 
 - [x] **Step 2: Define the Inbox boundary**
 

@@ -1,3 +1,5 @@
+"""Generate human-readable metric reports from the event stream."""
+
 import csv
 import html
 import io
@@ -10,14 +12,24 @@ from .reader import read_events
 
 
 def day_start(value: str) -> datetime:
-    return datetime.combine(datetime.fromisoformat(value).date(), time.min, tzinfo=timezone.utc)
+    """Return the UTC beginning of an ISO calendar date."""
+
+    return datetime.combine(
+        datetime.fromisoformat(value).date(), time.min, tzinfo=timezone.utc
+    )
 
 
 def day_end(value: str) -> datetime:
-    return datetime.combine(datetime.fromisoformat(value).date(), time.max, tzinfo=timezone.utc)
+    """Return the UTC end of an ISO calendar date."""
+
+    return datetime.combine(
+        datetime.fromisoformat(value).date(), time.max, tzinfo=timezone.utc
+    )
 
 
 def build_report(repo_root: Path, start: str, end: str) -> Dict:
+    """Read and aggregate events for an inclusive date range."""
+
     events, errors = read_events(repo_root)
     report = aggregate(events, day_start(start), day_end(end))
     report["read_errors"] = errors
@@ -25,24 +37,45 @@ def build_report(repo_root: Path, start: str, end: str) -> Dict:
 
 
 def csv_text(report: Dict) -> str:
+    """Render task metrics as CSV text."""
+
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow([
-        "gtd_id", "active_seconds", "waiting_seconds", "scheduled_seconds",
-        "cycle_seconds", "transitions", "final_prefix", "completed_at", "tags",
-        "impact_level",
-    ])
+    writer.writerow(
+        [
+            "gtd_id",
+            "active_seconds",
+            "waiting_seconds",
+            "scheduled_seconds",
+            "cycle_seconds",
+            "transitions",
+            "final_prefix",
+            "completed_at",
+            "tags",
+            "impact_level",
+        ]
+    )
     for task in report["tasks"]:
-        writer.writerow([
-            task["gtd_id"], task["active_seconds"], task["waiting_seconds"],
-            task["scheduled_seconds"], task["cycle_seconds"], task["transitions"],
-            task["final_prefix"], task["completed_at"] or "", ",".join(task["tags"]),
-            task["impact_level"] or "",
-        ])
+        writer.writerow(
+            [
+                task["gtd_id"],
+                task["active_seconds"],
+                task["waiting_seconds"],
+                task["scheduled_seconds"],
+                task["cycle_seconds"],
+                task["transitions"],
+                task["final_prefix"],
+                task["completed_at"] or "",
+                ",".join(task["tags"]),
+                task["impact_level"] or "",
+            ]
+        )
     return output.getvalue()
 
 
 def html_text(report: Dict) -> str:
+    """Render a compact HTML summary and task table."""
+
     summary = [
         ("Tasks", report["task_count"]),
         ("Completed", report["completed_count"]),
@@ -56,13 +89,18 @@ def html_text(report: Dict) -> str:
     )
     rows = "".join(
         "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
-            html.escape(task["gtd_id"]), task["active_seconds"], task["waiting_seconds"],
-            task["scheduled_seconds"], html.escape(task["final_prefix"] or ""),
+            html.escape(task["gtd_id"]),
+            task["active_seconds"],
+            task["waiting_seconds"],
+            task["scheduled_seconds"],
+            html.escape(task["final_prefix"] or ""),
             "yes" if task["completed_at"] else "no",
         )
         for task in report["tasks"]
     )
-    errors = "".join("<li>{}</li>".format(html.escape(error)) for error in report["read_errors"])
+    errors = "".join(
+        "<li>{}</li>".format(html.escape(error)) for error in report["read_errors"]
+    )
     return """<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Job Utils Metrics</title>
 <style>body{{font:16px system-ui;margin:2rem}}main{{display:flex;gap:1rem;flex-wrap:wrap}}
@@ -80,6 +118,8 @@ td,th{{border:1px solid #ccc;padding:.4rem}}</style>
 
 
 def svg_text(report: Dict) -> str:
+    """Render an SVG bar chart for active, waiting, and scheduled time."""
+
     values = [
         ("active", report["active_seconds"]),
         ("waiting", report["waiting_seconds"]),
@@ -95,13 +135,29 @@ def svg_text(report: Dict) -> str:
                 y + 18, html.escape(label), y, width, 110 + width, y + 18, value
             )
         )
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="170" role="img"><title>Task time</title>{}</svg>'.format("".join(bars))
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="170" role="img"><title>Task time</title>{}</svg>'.format(
+        "".join(bars)
+    )
 
 
-def write_reports(repo_root: Path, start: str, end: str, formats: Sequence[str], output_dir: Optional[Path] = None) -> List[Path]:
+def write_reports(
+    repo_root: Path,
+    start: str,
+    end: str,
+    formats: Sequence[str],
+    output_dir: Optional[Path] = None,
+) -> List[Path]:
+    """Write requested report formats to a dated output directory."""
+
     report = build_report(repo_root, start, end)
     period = "{}_to_{}".format(start, end)
-    target = output_dir or (Path(repo_root) / ".jobutils" / "output" / datetime.now().date().isoformat() / period)
+    target = output_dir or (
+        Path(repo_root)
+        / ".jobutils"
+        / "output"
+        / datetime.now().date().isoformat()
+        / period
+    )
     target.mkdir(parents=True, exist_ok=True)
     written: List[Path] = []
     for format_name in formats:

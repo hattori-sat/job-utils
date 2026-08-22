@@ -21,7 +21,6 @@ flowchart LR
     next --> someday
     someday --> next
     project --> next
-    pointer --> next
 ```
 
 The diagram shows common transitions, not an exhaustive allow-list. Any known

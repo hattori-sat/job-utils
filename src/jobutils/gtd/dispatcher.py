@@ -1,7 +1,10 @@
+"""Move GTD index items and maintain their linked task Markdown."""
+
 import os
 import re
 import tempfile
 import uuid
+from datetime import date
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -91,12 +94,16 @@ def _safe_link(repo_root: Path, link: str) -> Path:
     candidate = (repo_root / link).resolve()
     root = repo_root.resolve()
     if candidate != root and root not in candidate.parents:
-        raise DispatchError("linked detail path escapes the GTD repository: {}".format(link))
+        raise DispatchError(
+            "linked detail path escapes the GTD repository: {}".format(link)
+        )
     return candidate
 
 
-def _task_template(gtd_path: Path, prefix: str, title: str, task_id: str) -> str:
-    today = __import__("datetime").date.today().isoformat()
+def _task_template(prefix: str, title: str, task_id: str) -> str:
+    """Build the compact task document created by the first GTD dispatch."""
+
+    today = date.today().isoformat()
     lines = [
         "---",
         "gtd_id: {}".format(frontmatter.quote(task_id)),
@@ -106,25 +113,9 @@ def _task_template(gtd_path: Path, prefix: str, title: str, task_id: str) -> str
         "title: {}".format(frontmatter.quote(title)),
         "created_at: {}".format(frontmatter.quote(today)),
         "updated_at: {}".format(frontmatter.quote(today)),
-        "gtd_file: {}".format(frontmatter.quote("../" + gtd_path.name)),
         "tags: []",
         "impact_level: null",
-        "impact_area: null",
         "estimate_minutes: null",
-        "publish_jira: false",
-        "jira_project: null",
-        "jira_issue_type: Task",
-        "jira_parent_key: null",
-        "jira_key: null",
-        "jira_url: null",
-        "publish_confluence: false",
-        "confluence_space_id: null",
-        "confluence_space_key: null",
-        "confluence_parent_id: null",
-        "confluence_page_id: null",
-        "confluence_url: null",
-        "confluence_version: 0",
-        "references: []",
         "---",
         "",
         "# Summary",
@@ -195,22 +186,28 @@ def _task_template(gtd_path: Path, prefix: str, title: str, task_id: str) -> str
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def _update_detail(path: Path, item: TaskItem, gtd_path: Path) -> None:
+def _update_detail(path: Path, item: TaskItem) -> None:
+    """Synchronize a linked task's state and title with its GTD index item."""
+
     lines = path.read_text(encoding="utf-8").splitlines()
     if frontmatter.value(lines, "gtd_id") is None:
         raise DispatchError("unmanaged detail file: {}".format(path))
     old_title = frontmatter.value(lines, "title")
     old_prefix = frontmatter.value(lines, "prefix")
     old_status = frontmatter.value(lines, "status")
-    changed = old_title != item.title or old_prefix != item.prefix or old_status != STATUSES[item.prefix]
+    changed = (
+        old_title != item.title
+        or old_prefix != item.prefix
+        or old_status != STATUSES[item.prefix]
+    )
     if not changed:
         return
     frontmatter.set_value(lines, "title", item.title)
     frontmatter.set_value(lines, "prefix", item.prefix)
     frontmatter.set_value(lines, "status", STATUSES[item.prefix])
-    frontmatter.set_value(lines, "updated_at", __import__("datetime").date.today().isoformat())
+    frontmatter.set_value(lines, "updated_at", date.today().isoformat())
     if item.prefix == "done":
-        frontmatter.set_value(lines, "completed_at", __import__("datetime").date.today().isoformat())
+        frontmatter.set_value(lines, "completed_at", date.today().isoformat())
     else:
         frontmatter.remove_key(lines, "completed_at")
     closing = frontmatter.bounds(lines)
@@ -228,6 +225,8 @@ def dispatch(
     machine_id: Optional[str] = None,
     command: str = "python:gtd dispatch",
 ) -> DispatchResult:
+    """Dispatch every recognized GTD item into its prefixed section."""
+
     repo_root = Path(repo_root).resolve()
     gtd_path = (gtd_path or repo_root / "gtd.md").resolve()
     lines = _read_lines(gtd_path)
@@ -266,8 +265,9 @@ def dispatch(
             task_id_for_event = task_id
             link = "gtd_tasks/{}.md".format(task_id)
             detail_path = _safe_link(repo_root, link)
-            detail_writes.append((detail_path, _task_template(gtd_path, item.prefix, item.title, task_id)))
-            task_lines = _task_template(gtd_path, item.prefix, item.title, task_id).splitlines()
+            detail_content = _task_template(item.prefix, item.title, task_id)
+            detail_writes.append((detail_path, detail_content))
+            task_lines = detail_content.splitlines()
             created.append(detail_path)
 
         buckets[item.prefix].append(
@@ -275,15 +275,19 @@ def dispatch(
         )
         if item.source_prefix != item.prefix:
             if task_id_for_event:
-                events.append((
-                    task_id_for_event,
-                    item.source_prefix,
-                    item.prefix,
-                    frontmatter.list_value(task_lines, "tags"),
-                    frontmatter.value(task_lines, "impact_level"),
-                ))
+                events.append(
+                    (
+                        task_id_for_event,
+                        item.source_prefix,
+                        item.prefix,
+                        frontmatter.list_value(task_lines, "tags"),
+                        frontmatter.value(task_lines, "impact_level"),
+                    )
+                )
 
-    new_lines = [line for index, line in enumerate(lines) if index not in delete_indices]
+    new_lines = [
+        line for index, line in enumerate(lines) if index not in delete_indices
+    ]
     for prefix in PREFIXES:
         _append_bucket(new_lines, SECTIONS[prefix], buckets[prefix])
 
@@ -294,25 +298,38 @@ def dispatch(
     for path, content in detail_writes:
         _atomic_write(path, content)
     for path, item in detail_updates:
-        _update_detail(path, item, gtd_path)
+        _update_detail(path, item)
     event_count = 0
     for task_id, from_prefix, to_prefix, tags, impact_level in events:
         append_state_change(
-            repo_root, task_id, from_prefix, to_prefix, command, machine_id,
-            tags=tags, impact_level=impact_level,
+            repo_root,
+            task_id,
+            from_prefix,
+            to_prefix,
+            command,
+            machine_id,
+            tags=tags,
+            impact_level=impact_level,
         )
         event_count += 1
     return DispatchResult(gtd_path, len(items), created, event_count)
 
 
-def create_task(repo_root: Path, line_number: int, gtd_path: Optional[Path] = None) -> Path:
+def create_task(
+    repo_root: Path, line_number: int, gtd_path: Optional[Path] = None
+) -> Path:
+    """Create or return the task document linked from a GTD line."""
+
     repo_root = Path(repo_root).resolve()
     gtd_path = (gtd_path or repo_root / "gtd.md").resolve()
     lines = _read_lines(gtd_path)
     if line_number < 1 or line_number > len(lines):
         raise DispatchError("line number is outside gtd.md")
     items, _ = scan_items(lines)
-    item = next((candidate for candidate in items if candidate.line_index == line_number - 1), None)
+    item = next(
+        (candidate for candidate in items if candidate.line_index == line_number - 1),
+        None,
+    )
     if item is None:
         raise DispatchError("place the cursor on a prefixed task item")
     if item.link:
@@ -327,7 +344,7 @@ def create_task(repo_root: Path, line_number: int, gtd_path: Optional[Path] = No
     task_id = str(uuid.uuid4())
     link = "gtd_tasks/{}.md".format(task_id)
     path = _safe_link(repo_root, link)
-    content = _task_template(gtd_path, item.prefix, item.title, task_id)
+    content = _task_template(item.prefix, item.title, task_id)
     new_lines = list(lines)
     new_lines[line_number - 1] = "- {}: {} <{}>".format(item.prefix, item.title, link)
     _atomic_write(path, content)

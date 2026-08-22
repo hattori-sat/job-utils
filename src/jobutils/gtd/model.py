@@ -1,3 +1,5 @@
+"""Canonical GTD prefixes and the parsed item value object."""
+
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
@@ -10,7 +12,6 @@ PREFIXES: Tuple[str, ...] = (
     "cal",
     "someday",
     "project",
-    "pointer",
     "done",
 )
 
@@ -22,7 +23,6 @@ SECTIONS: Dict[str, str] = {
     "cal": "Calendar",
     "someday": "Someday",
     "project": "Projects",
-    "pointer": "Pointer",
     "done": "Done",
 }
 
@@ -34,11 +34,12 @@ STATUSES: Dict[str, str] = {
     "cal": "scheduled",
     "someday": "deferred",
     "project": "active",
-    "pointer": "reference",
     "done": "done",
 }
 
-SECTION_TO_PREFIX: Dict[str, str] = {section: prefix for prefix, section in SECTIONS.items()}
+SECTION_TO_PREFIX: Dict[str, str] = {
+    section: prefix for prefix, section in SECTIONS.items()
+}
 
 
 @dataclass(frozen=True)

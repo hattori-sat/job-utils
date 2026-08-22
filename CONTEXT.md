@@ -23,7 +23,6 @@ Markdown, Vim, Git, Jira, and Confluence.
   waiting time.
 - **Someday**: work intentionally deferred without a current commitment.
 - **Project**: an outcome that requires more than one action.
-- **Pointer**: a reference to information or a document.
 - **Done**: completed work.
 - **Task Markdown**: a Markdown file representing a task or project item.
 - **Document Markdown**: a Markdown file representing publishable or

@@ -1,3 +1,5 @@
+"""Parse GTD sections, prefixes, titles, and local Markdown links."""
+
 import re
 from typing import Iterable, List, Optional, Tuple
 
@@ -11,6 +13,8 @@ LINK_RE = re.compile(r"^(.*?)\s+<([^<>]+\.md)>\s*$")
 
 
 def split_title_link(body: str) -> Tuple[str, Optional[str]]:
+    """Split an item body into its display title and optional detail link."""
+
     match = LINK_RE.match(body)
     if not match:
         return body.strip(), None
@@ -33,12 +37,12 @@ def scan_items(lines: Iterable[str]) -> Tuple[List[TaskItem], List[Tuple[int, st
         if match:
             prefix = match.group(1).lower()
             prefixed.append((index, prefix))
+            # Unknown prefixes stay untouched so a future vocabulary extension
+            # cannot silently rewrite a user's existing item.
             if prefix not in PREFIXES:
                 continue
             title, link = split_title_link(match.group(2))
-            items.append(
-                TaskItem(index, title, prefix, current_section, link, True)
-            )
+            items.append(TaskItem(index, title, prefix, current_section, link, True))
             continue
 
         section_prefix = SECTION_TO_PREFIX.get(current_section)

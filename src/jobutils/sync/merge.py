@@ -1,3 +1,5 @@
+"""Three-way merge behavior for public Markdown bodies."""
+
 from typing import Tuple
 
 

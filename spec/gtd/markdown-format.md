@@ -11,35 +11,25 @@ join key used by Vim, Python, metric events, and external identities.
 gtd_id: 4f3d0d2f-8b25-4b78-bf67-5e4a0c2f4db0
 kind: task
 prefix: next
-status: next
+status: open
 title: Define the delivery checklist
 created_at: 2026-08-23T09:00:00+09:00
 updated_at: 2026-08-23T09:00:00+09:00
-gtd_file: ../gtd.md
 tags: [delivery, planning]
 impact_level: medium
-impact_area: delivery
 estimate_minutes: 60
-publish_jira: false
-jira_project: null
-jira_issue_type: Task
-jira_parent_key: null
-jira_progress_comment_field: null
-jira_key: null
-jira_url: null
-publish_confluence: false
-confluence_space_id: null
-confluence_space_key: null
-confluence_parent_id: null
-confluence_page_id: null
-confluence_url: null
-confluence_version: 0
-references: []
 ---
 ```
 
-The exact external identifiers are populated by synchronization. Credentials,
-cookies, access tokens, and other secrets never belong in front matter.
+The fields above are the task identity, workflow, and measurement metadata.
+External synchronization fields are optional and are added only for a
+published item. Jira items may use `publish_jira`, `jira_project`,
+`jira_issue_type`, `jira_parent_key`, `jira_progress_comment_field`,
+`jira_key`, and `jira_url`. Confluence items may use `publish_confluence`,
+`confluence_space_id`, `confluence_space_key`, `confluence_parent_id`,
+`confluence_page_id`, `confluence_url`, and `confluence_version`. The sync
+engine may also add `sync_hash` after a successful apply. Credentials, cookies,
+access tokens, and other secrets never belong in front matter.
 
 ## Task body
 
