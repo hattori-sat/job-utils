@@ -526,6 +526,49 @@ class VimRuntimeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertIn("cancel", messages.read_text(encoding="utf-8").lower())
 
+    def test_sync_apply_without_path_uses_latest_status_plan(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            plans = root / ".jobutils" / "sync" / "plans"
+            plans.mkdir(parents=True)
+            (plans / "plan.json").write_text(
+                '{"plan_id": "plan-1", "actions": []}\n', encoding="utf-8"
+            )
+            messages = root / "messages.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
+                    "+let g:jobutils_python='{}'".format(sys.executable),
+                    "+let g:jobutils_sync_confirm='C'",
+                    "+edit " + str(root / "gtd.md"),
+                    "+GtdSyncApply",
+                    "+call writefile([execute('messages')], '" + str(messages) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**__import__("os").environ, "PYTHONPATH": str(repository / "src")},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            message_text = messages.read_text(encoding="utf-8").lower()
+            self.assertNotIn("no synchronization plan", message_text)
+            self.assertIn("cancel", message_text)
+
     def test_sync_plan_command_creates_reviewable_plan(self):
         vim = shutil.which("vim")
         if vim is None:

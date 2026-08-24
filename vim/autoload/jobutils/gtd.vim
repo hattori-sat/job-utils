@@ -102,18 +102,16 @@ function! s:sync_plan_path(root, requested) abort
     endif
     return stridx(l:left, l:right) == 0 ? l:candidate : ''
   endif
-  let l:paths = glob(a:root . '/.jobutils/sync/plans/*.json', 0, 1)
-  call sort(l:paths)
-  let l:latest = ''
-  let l:latest_time = -1
-  for l:path in l:paths
-    let l:modified = getftime(l:path)
-    if l:modified >= l:latest_time
-      let l:latest = l:path
-      let l:latest_time = l:modified
-    endif
-  endfor
-  return l:latest
+  let l:status = s:run_cli('sync status')
+  if !l:status.ok
+    return ''
+  endif
+  let l:latest = matchstr(l:status.output, '"latest_plan"\s*:\s*"\zs[^"]*')
+  if empty(l:latest)
+    return ''
+  endif
+  let l:candidate = a:root . '/' . substitute(l:latest, '\\', '/', 'g')
+  return filereadable(l:candidate) ? resolve(fnamemodify(l:candidate, ':p')) : ''
 endfunction
 
 function! s:current_item_title() abort

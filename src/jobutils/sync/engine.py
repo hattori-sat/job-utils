@@ -158,9 +158,9 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
     latest_plan = None
     for path in plan_paths:
         try:
-            plan_records.append(
-                (path, json.loads(path.read_text(encoding="utf-8")))
-            )
+            plan = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(plan, dict):
+                plan_records.append((path, plan))
         except (OSError, ValueError):
             continue
     pending_actions = 0

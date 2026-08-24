@@ -184,8 +184,10 @@ Objective.
             json.dumps({"created_at": "2026-08-24T10:00:00Z", "actions": [{}, {}, {}]}),
             encoding="utf-8",
         )
+        (plans / "plan-3.json").write_text("[]\n", encoding="utf-8")
         os.utime(plans / "plan-1.json", (100, 100))
         os.utime(plans / "plan-2.json", (200, 200))
+        os.utime(plans / "plan-3.json", (300, 300))
         (bases / "base-1.md").write_text("# Base\n", encoding="utf-8")
         (self.repo / "documents" / "guide.md").write_text(
             "---\nkind: document\n---\n\n<<<<<<< local\nLocal\n=======\nRemote\n>>>>>>> external\n",
