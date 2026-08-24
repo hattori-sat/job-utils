@@ -250,6 +250,60 @@ function! jobutils#gtd#document() abort
   execute 'hide edit ' . fnameescape(l:path)
 endfunction
 
+function! s:current_document_path() abort
+  let l:root = resolve(s:document_root())
+  let l:current = resolve(expand('%:p'))
+  if empty(l:root) || empty(l:current)
+    return ''
+  endif
+  let l:root = substitute(l:root, '/$', '', '')
+  let l:prefix = l:root . '/documents/'
+  if stridx(l:current, l:prefix) != 0
+    return ''
+  endif
+  return substitute(strpart(l:current, strlen(l:root) + 1), '\\', '/', 'g')
+endfunction
+
+function! s:in_subdocuments_section() abort
+  let l:inside = 0
+  for l:index in range(1, line('.'))
+    let l:heading = getline(l:index)
+    if l:heading =~# '^#\s\+Subdocuments\s*$'
+      let l:inside = 1
+    elseif l:heading =~# '^#\s\+' && l:inside
+      let l:inside = 0
+    endif
+  endfor
+  return l:inside
+endfunction
+
+function! jobutils#gtd#subdocument() abort
+  let l:parent = s:current_document_path()
+  if empty(l:parent)
+    echoerr 'GTD: subdocument must be created from a document Markdown file'
+    return
+  endif
+  if !s:in_subdocuments_section()
+    echoerr 'GTD: place the cursor under the # Subdocuments heading'
+    return
+  endif
+  update
+  let l:result = s:run_cli(
+        \ 'gtd subdocument --line ' . line('.') . ' --parent ' . shellescape(l:parent)
+        \ )
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: subdocument failed')
+    return
+  endif
+  let l:path = substitute(split(l:result.output, '\n')[0], '\n\+$', '', '')
+  if empty(l:path) || !filereadable(l:path)
+    echoerr 'GTD: subdocument path was not returned'
+    return
+  endif
+  call s:reload_current_buffer()
+  execute 'hide edit ' . fnameescape(l:path)
+endfunction
+
 function! jobutils#gtd#follow_link() abort
   let l:match = matchlist(getline('.'), '<\([^<>]\+\.md\)>')
   if empty(l:match)
@@ -283,6 +337,23 @@ function! jobutils#gtd#metrics_help() abort
   echo ':GtdTags    show the standard tag catalog'
   echo ':GtdImpactLevels  show impact levels'
   echo ':GtdMetricsHelp  show these commands'
+endfunction
+
+function! jobutils#gtd#task_help() abort
+  echo 'Task Markdown: :GtdTask creates only the selected task detail.'
+  echo 'Prefixes: inbox, next, today, focus, wait, cal, someday, project, done'
+  echo 'Tags: delivery planning investigation implementation review documentation operations learning'
+  echo 'Impact: low, medium, high | Issue type: Task, Story, Sub-task'
+  echo 'Publishing: publish_jira=true with jira_project; Progress Comment is ordinary text.'
+  echo 'Subtasks: add a bullet under # Subtasks, then run :GtdSubtask.'
+endfunction
+
+function! jobutils#gtd#doc_help() abort
+  echo 'Document Markdown: :GtdDoc creates a document from docs.md.'
+  echo 'Publishing: publish_confluence=true; space and parent defaults come from .env.'
+  echo 'Subdocuments: add a bullet under # Subdocuments, then run :GtdSubdocument.'
+  echo 'Parent fields: parent_document_id, confluence_parent_path, confluence_parent_id.'
+  echo 'Implementation Note is retained locally and is never published.'
 endfunction
 
 function! jobutils#gtd#review() abort

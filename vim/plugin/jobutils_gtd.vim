@@ -7,9 +7,12 @@ command! Gtd call jobutils#gtd#dispatch()
 command! GtdTask call jobutils#gtd#task()
 command! GtdSubtask call jobutils#gtd#subtask()
 command! GtdDoc call jobutils#gtd#document()
+command! GtdSubdocument call jobutils#gtd#subdocument()
 command! GtdTags call jobutils#gtd#catalog()
 command! GtdImpactLevels call jobutils#gtd#catalog()
 command! GtdMetricsHelp call jobutils#gtd#metrics_help()
+command! GtdTaskHelp call jobutils#gtd#task_help()
+command! GtdDocHelp call jobutils#gtd#doc_help()
 command! GtdReview call jobutils#gtd#review()
 command! GtdSyncPlan call jobutils#gtd#sync_plan()
 command! -nargs=? GtdSyncApply call jobutils#gtd#sync_apply(<q-args>)
@@ -29,6 +32,8 @@ cnoreabbrev <expr> gtdtask
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdtask' ? 'GtdTask' : 'gtdtask'
 cnoreabbrev <expr> gtddoc
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtddoc' ? 'GtdDoc' : 'gtddoc'
+cnoreabbrev <expr> gtdsubdocument
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsubdocument' ? 'GtdSubdocument' : 'gtdsubdocument'
 cnoreabbrev <expr> gtdsubtask
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsubtask' ? 'GtdSubtask' : 'gtdsubtask'
 cnoreabbrev <expr> gtdtags
@@ -37,6 +42,10 @@ cnoreabbrev <expr> gtdimpactlevels
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdimpactlevels' ? 'GtdImpactLevels' : 'gtdimpactlevels'
 cnoreabbrev <expr> gtdmetricshelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdmetricshelp' ? 'GtdMetricsHelp' : 'gtdmetricshelp'
+cnoreabbrev <expr> gtdtaskhelp
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdtaskhelp' ? 'GtdTaskHelp' : 'gtdtaskhelp'
+cnoreabbrev <expr> gtddochelp
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtddochelp' ? 'GtdDocHelp' : 'gtddochelp'
 cnoreabbrev <expr> gtdreview
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdreview' ? 'GtdReview' : 'gtdreview'
 cnoreabbrev <expr> gtdsyncplan

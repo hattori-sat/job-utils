@@ -65,6 +65,9 @@ def _template(title: str, document_id: str) -> str:
     """Return the compact Document Markdown authoring template."""
 
     today = date.today().isoformat()
+    space_id = os.environ.get("CONFLUENCE_SPACE_ID", "")
+    space_key = os.environ.get("CONFLUENCE_SPACE_KEY", "")
+    parent_id = os.environ.get("CONFLUENCE_PARENT_ID", "")
     lines = [
         "---",
         "gtd_id: {}".format(frontmatter.quote(document_id)),
@@ -73,9 +76,22 @@ def _template(title: str, document_id: str) -> str:
         "created_at: {}".format(frontmatter.quote(today)),
         "updated_at: {}".format(frontmatter.quote(today)),
         "tags: []",
+        "publish_confluence: false",
+        "parent_document_id: null",
+        "confluence_space_id: {}".format(frontmatter.quote(space_id) if space_id else "null"),
+        "confluence_space_key: {}".format(frontmatter.quote(space_key) if space_key else "null"),
+        "confluence_parent_id: {}".format(frontmatter.quote(parent_id) if parent_id else "null"),
+        "confluence_parent_path: null",
+        "confluence_page_id: null",
+        "confluence_url: null",
+        "confluence_version: 0",
         "---",
         "",
         "# {}".format(title),
+        "",
+        "",
+        "",
+        "# Subdocuments",
         "",
         "",
         "",
@@ -85,6 +101,47 @@ def _template(title: str, document_id: str) -> str:
         "",
     ]
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _level_one_section_bounds(lines, heading: str) -> Optional[Tuple[int, int]]:
+    """Return the content bounds for a level-one document section."""
+
+    header = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "# " + heading
+        ),
+        None,
+    )
+    if header is None:
+        return None
+    end = next(
+        (
+            index
+            for index in range(header + 1, len(lines))
+            if re.match(r"^#\s+", lines[index])
+        ),
+        len(lines),
+    )
+    return header + 1, end
+
+
+def _document_child_item(lines, line_number: int) -> Tuple[int, str, Optional[str]]:
+    """Read a child bullet and require it to be inside Subdocuments."""
+
+    bounds = _level_one_section_bounds(lines, "Subdocuments")
+    if bounds is None:
+        raise DocumentError("parent document is missing the # Subdocuments section")
+    if line_number < 1 or line_number > len(lines):
+        raise DocumentError("line number is outside the parent document")
+    index = line_number - 1
+    if index < bounds[0] or index >= bounds[1]:
+        raise DocumentError("place the cursor on a bullet under # Subdocuments")
+    item = _document_item(lines, line_number)
+    if item is None:
+        raise DocumentError("place the cursor on a bullet under # Subdocuments")
+    return item
 
 
 def _document_item(lines, line_number: int) -> Optional[Tuple[int, str, Optional[str]]]:
@@ -125,4 +182,86 @@ def create_document(
     lines[index] = "- {} <{}>".format(title, link)
     _atomic_write(path, _template(title, document_id))
     _atomic_write(docs_path, _render(lines))
+    return path
+
+
+def create_subdocument(repo_root: Path, parent_path: str, line_number: int) -> Path:
+    """Create a recursively nested document from a parent document bullet."""
+
+    repo_root = Path(repo_root).resolve()
+    parent = _safe_link(repo_root, parent_path)
+    if not parent.is_file():
+        raise DocumentError("parent document is missing: {}".format(parent_path))
+    relative_parent = parent.relative_to(repo_root)
+    if not relative_parent.parts or relative_parent.parts[0] != "documents":
+        raise DocumentError("parent document must be under documents: {}".format(parent_path))
+
+    lines = parent.read_text(encoding="utf-8").splitlines()
+    _, title, existing_link = _document_child_item(lines, line_number)
+    if existing_link:
+        path = _safe_link(repo_root, existing_link)
+        if not path.is_file():
+            raise DocumentError("linked subdocument is missing: {}".format(existing_link))
+        return path
+
+    parent_id = frontmatter.value(lines, "gtd_id")
+    if parent_id is None:
+        raise DocumentError("parent document is missing gtd_id: {}".format(parent_path))
+    document_id = str(uuid.uuid4())
+    link = str((parent.with_suffix("") / (document_id + ".md")).relative_to(repo_root)).replace(
+        "\\", "/"
+    )
+    child_lines = [
+        "---",
+        "gtd_id: {}".format(frontmatter.quote(document_id)),
+        "kind: 'document'",
+        "title: {}".format(frontmatter.quote(title)),
+        "created_at: {}".format(frontmatter.quote(date.today().isoformat())),
+        "updated_at: {}".format(frontmatter.quote(date.today().isoformat())),
+        "tags: []",
+        "publish_confluence: {}".format(
+            "true"
+            if (frontmatter.value(lines, "publish_confluence") or "").lower() == "true"
+            else "false"
+        ),
+        "parent_document_id: {}".format(frontmatter.quote(parent_id)),
+        "confluence_space_id: {}".format(
+            frontmatter.quote(frontmatter.value(lines, "confluence_space_id"))
+            if frontmatter.value(lines, "confluence_space_id")
+            else "null"
+        ),
+        "confluence_space_key: {}".format(
+            frontmatter.quote(frontmatter.value(lines, "confluence_space_key"))
+            if frontmatter.value(lines, "confluence_space_key")
+            else "null"
+        ),
+        "confluence_parent_id: {}".format(
+            frontmatter.quote(frontmatter.value(lines, "confluence_page_id"))
+            if frontmatter.value(lines, "confluence_page_id")
+            else "null"
+        ),
+        "confluence_parent_path: {}".format(frontmatter.quote(relative_parent.as_posix())),
+        "confluence_page_id: null",
+        "confluence_url: null",
+        "confluence_version: 0",
+        "---",
+        "",
+        "# {}".format(title),
+        "",
+        "",
+        "",
+        "# Subdocuments",
+        "",
+        "",
+        "",
+        "# Implementation Note",
+        "",
+        "",
+        "",
+    ]
+    new_lines = list(lines)
+    new_lines[line_number - 1] = "- {} <{}>".format(title, link)
+    path = _safe_link(repo_root, link)
+    _atomic_write(path, _render(child_lines))
+    _atomic_write(parent, _render(new_lines))
     return path

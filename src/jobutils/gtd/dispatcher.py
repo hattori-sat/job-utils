@@ -141,6 +141,7 @@ def _ensure_capture_event(
         prefix=frontmatter.value(lines, "prefix"),
         tags=frontmatter.list_value(lines, "tags"),
         impact_level=frontmatter.value(lines, "impact_level"),
+        estimate_minutes=frontmatter.value(lines, "estimate_minutes"),
     )
 
 
@@ -157,6 +158,9 @@ def _task_template(
     """Build the compact task document created by the first GTD dispatch."""
 
     today = date.today().isoformat()
+    jira_project = jira_project or os.environ.get("JIRA_PROJECT")
+    jira_issue_type = jira_issue_type or os.environ.get("JIRA_ISSUE_TYPE", "Task")
+    jira_progress_comment_field = os.environ.get("JIRA_PROGRESS_COMMENT_FIELD", "")
     parent_value = frontmatter.quote(parent_gtd_id) if parent_gtd_id else "null"
     jira_parent_value = frontmatter.quote(jira_parent_key) if jira_parent_key else "null"
     lines = [
@@ -178,7 +182,11 @@ def _task_template(
         ),
         "jira_issue_type: {}".format(frontmatter.quote(jira_issue_type)),
         "jira_parent_key: {}".format(jira_parent_value),
-        "jira_progress_comment_field: null",
+        "jira_progress_comment_field: {}".format(
+            frontmatter.quote(jira_progress_comment_field)
+            if jira_progress_comment_field
+            else "null"
+        ),
         "jira_key: null",
         "jira_url: null",
         "---",
@@ -308,7 +316,7 @@ def dispatch(
     buckets: Dict[str, List[str]] = {prefix: [] for prefix in PREFIXES}
     delete_indices = {item.line_index for item in items}
     detail_updates: List[Tuple[Path, TaskItem]] = []
-    events: List[Tuple[str, str, str, List[str], Optional[str]]] = []
+    events: List[Tuple[str, str, str, List[str], Optional[str], Optional[str], Optional[str]]] = []
 
     for item in items:
         link = item.link
@@ -340,6 +348,8 @@ def dispatch(
                         item.prefix,
                         frontmatter.list_value(task_lines, "tags"),
                         frontmatter.value(task_lines, "impact_level"),
+                        frontmatter.value(task_lines, "kind"),
+                        frontmatter.value(task_lines, "estimate_minutes"),
                     )
                 )
 
@@ -356,7 +366,7 @@ def dispatch(
     for path, item in detail_updates:
         _update_detail(path, item)
     event_count = 0
-    for task_id, from_prefix, to_prefix, tags, impact_level in events:
+    for task_id, from_prefix, to_prefix, tags, impact_level, kind, estimate_minutes in events:
         append_state_change(
             repo_root,
             task_id,
@@ -366,6 +376,8 @@ def dispatch(
             machine_id,
             tags=tags,
             impact_level=impact_level,
+            kind=kind,
+            estimate_minutes=estimate_minutes,
         )
         event_count += 1
     return DispatchResult(gtd_path, len(items), [], event_count)

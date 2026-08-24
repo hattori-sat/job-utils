@@ -99,6 +99,9 @@ Available commands include:
 - `:GtdTask` / `:gtdtask` — create or open the current task detail;
 - `:GtdSubtask` / `:gtdsubtask` — create a child from a task's `# Subtasks` section;
 - `:GtdDoc` / `:gtddoc` — create or open the current document detail;
+- `:GtdSubdocument` / `:gtdsubdocument` — create a recursive child from a document's `# Subdocuments` section;
+- `:GtdTaskHelp` / `:gtdtaskhelp` — show task fields, prefixes, tags, and Jira inputs;
+- `:GtdDocHelp` / `:gtddochelp` — show document fields, Confluence inputs, and parent relationships;
 - `:GtdTags` — show the standard tag catalog;
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
@@ -148,8 +151,10 @@ jobutils gtd task --repo /absolute/path/to/your-gtd-repository --line 12
 jobutils gtd subtask --repo /absolute/path/to/your-gtd-repository \
   --parent gtd_tasks/<parent-task>.md --line 18
 jobutils gtd document --repo /absolute/path/to/your-gtd-repository --line 8
+jobutils gtd subdocument --repo /absolute/path/to/your-gtd-repository \
+  --parent documents/<parent>.md --line 14
 jobutils metrics catalog --repo /absolute/path/to/your-gtd-repository
-jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026-01-01 --to 2026-12-31
+jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026-01-01 --to 2026-12-31 --format html,csv,svg,json
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
 ```
@@ -169,3 +174,14 @@ committed with the GTD Repository.
 To create a child task, open the parent task Markdown, add a bullet under
 `# Subtasks`, and run `:GtdSubtask` on that bullet. The current file is used as
 the parent automatically; the child is stored below the parent's directory.
+
+To create a child document, open the parent document Markdown, add a bullet
+under `# Subdocuments`, and run `:GtdSubdocument`. The child is stored below
+the parent's directory. Its `parent_document_id`, `confluence_parent_path`,
+and inherited publication fields are written at creation time. When a parent
+has not yet received a Confluence page ID, `sync apply` creates the parent
+first and passes its returned page ID to the child.
+
+The Jira project, issue type, progress-comment field, Confluence space, and
+default parent page are taken from `.env` when the corresponding Markdown
+front-matter value is empty. Explicit front matter overrides those defaults.
