@@ -54,6 +54,7 @@ python -m jobutils gtd dispatch --repo /path/to/gtd-repository
 python -m jobutils metrics catalog --repo /path/to/gtd-repository
 python -m jobutils metrics report --repo /path/to/gtd-repository --from 2026-01-01 --to 2026-12-31
 python -m jobutils sync plan --repo /path/to/gtd-repository
+ python -m jobutils config validate --path /path/to/config.yaml
 ```
 
 Generated reports are placed under `.jobutils/output/<generation-date>/<period>/`
