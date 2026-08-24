@@ -147,6 +147,50 @@ def save_plan(repo_root: Path, plan: Dict) -> Path:
     return path
 
 
+def sync_status(repo_root: Path) -> Dict[str, object]:
+    """Summarize local synchronization state without contacting Atlassian."""
+
+    repo_root = Path(repo_root).resolve()
+    plan_paths = sorted(
+        (repo_root / ".jobutils" / "sync" / "plans").glob("*.json")
+    )
+    plan_records = []
+    for path in plan_paths:
+        try:
+            plan_records.append(
+                (path, json.loads(path.read_text(encoding="utf-8")))
+            )
+        except (OSError, ValueError):
+            continue
+    latest_plan = None
+    pending_actions = 0
+    if plan_records:
+        path, plan = max(
+            plan_records,
+            key=lambda item: (str(item[1].get("created_at", "")), item[0].name),
+        )
+        latest_plan = str(path.relative_to(repo_root)).replace("\\", "/")
+        pending_actions = len(plan.get("actions", []))
+    base_paths = list(
+        (repo_root / ".jobutils" / "sync" / "bases").glob("*.md")
+    )
+    conflict_count = 0
+    for path in _documents(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "<<<<<<< local" in text and ">>>>>>> external" in text:
+            conflict_count += 1
+    return {
+        "base_count": len(base_paths),
+        "conflict_count": conflict_count,
+        "latest_plan": latest_plan,
+        "pending_actions": pending_actions,
+        "plan_count": len(plan_records),
+    }
+
+
 def _set_external(path: Path, kind: str, result: Dict) -> None:
     """Write returned external identities and the post-apply source hash."""
 

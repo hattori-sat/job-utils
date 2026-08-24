@@ -23,7 +23,14 @@ from .metrics.reader import read_events
 from .metrics.reports import write_reports
 from .setup_workflow import SetupError, run_setup
 from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
-from .sync.engine import SyncError, apply_plan, create_plan, pull, save_plan
+from .sync.engine import (
+    SyncError,
+    apply_plan,
+    create_plan,
+    pull,
+    save_plan,
+    sync_status,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -79,6 +86,7 @@ def _parser() -> argparse.ArgumentParser:
     pull_parser.add_argument(
         "--adapter", choices=("memory", "atlassian"), default="atlassian"
     )
+    sync_subparsers.add_parser("status").add_argument("--repo", default=".")
     config = subparsers.add_parser("config")
     config_subparsers = config.add_subparsers(dest="operation")
     config_validate_parser = config_subparsers.add_parser("validate")
@@ -177,6 +185,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 sort_keys=True,
             )
         )
+        return 0
+    if args.domain == "sync" and args.operation == "status":
+        print(json.dumps(sync_status(Path(args.repo)), sort_keys=True))
         return 0
     if args.domain == "sync" and args.operation == "apply":
         try:

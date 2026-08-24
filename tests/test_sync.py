@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import sys
 import tempfile
 import unittest
@@ -5,9 +8,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
+from jobutils.cli import main
 from jobutils.markdown.normalize import markdown_to_storage, parse_document
 from jobutils.sync.adapters import MemoryAdapter
-from jobutils.sync.engine import SyncError, apply_plan, create_plan, pull
+from jobutils.sync.engine import SyncError, apply_plan, create_plan, pull, sync_status
 from jobutils.sync.references import externalize_references
 
 
@@ -165,6 +169,35 @@ Objective.
         payload = plan["actions"][0]["payload"]
         self.assertEqual(payload["progress_comment_field"], "customfield_12345")
         self.assertIn("2026-08-23", payload["progress_comment"])
+
+    def test_sync_status_reports_local_state(self):
+        plans = self.repo / ".jobutils" / "sync" / "plans"
+        bases = self.repo / ".jobutils" / "sync" / "bases"
+        plans.mkdir(parents=True)
+        bases.mkdir(parents=True)
+        (plans / "plan-1.json").write_text(
+            json.dumps({"created_at": "2026-08-25T10:00:00Z", "actions": [{}, {}]}),
+            encoding="utf-8",
+        )
+        (bases / "base-1.md").write_text("# Base\n", encoding="utf-8")
+        (self.repo / "documents" / "guide.md").write_text(
+            "---\nkind: document\n---\n\n<<<<<<< local\nLocal\n=======\nRemote\n>>>>>>> external\n",
+            encoding="utf-8",
+        )
+
+        expected = {
+            "base_count": 1,
+            "conflict_count": 1,
+            "latest_plan": ".jobutils/sync/plans/plan-1.json",
+            "pending_actions": 2,
+            "plan_count": 1,
+        }
+        self.assertEqual(sync_status(self.repo), expected)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(["sync", "status", "--repo", str(self.repo)]), 0)
+        self.assertEqual(json.loads(output.getvalue()), expected)
 
 
 if __name__ == "__main__":
