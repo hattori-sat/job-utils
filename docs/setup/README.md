@@ -125,9 +125,9 @@ Make, and clang-format must be available on `PATH` when their commands are
 used.
 
 Yocto and OpenEmbedded metadata uses the `bitbake` filetype for `.bb`,
-`.bbappend`, `.bbclass`, recipe `.inc`, and `conf/*.conf` files. The runtime
-provides syntax highlighting, recipe-oriented indentation, `#` comments, and
-filename completion for common metadata extensions. It does not run BitBake
+`.bbappend`, `.bbclass`, recipe `.inc`, and `conf/*.conf` files. The local
+runtime adds syntax highlighting, four-column indentation, `#` comments, and
+file lookup suffixes for common metadata extensions. It does not run BitBake
 automatically; use the project build tools or a project-specific command when
 the build environment has been initialized.
 

@@ -317,6 +317,52 @@ class VimRuntimeTests(unittest.TestCase):
                 ["CMake configure", "fake cmake configure"],
             )
 
+    def test_clang_format_replaces_buffer_without_extra_eof_line(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_formatter = fake_bin / "clang-format"
+            fake_formatter.write_text(
+                "#!/bin/sh\nprintf 'formatted output\\n'\n",
+                encoding="utf-8",
+            )
+            fake_formatter.chmod(0o755)
+            source = root / "main.c"
+            source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+            result_file = root / "formatted.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+                    "+edit " + str(source),
+                    "+JobutilsClangFormat",
+                    "+call writefile(getline(1, '$'), '" + str(result_file) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(
+                result_file.read_text(encoding="utf-8").splitlines(),
+                ["formatted output"],
+            )
+
     def test_gtd_dispatch_reloads_buffer_and_keeps_current_task_usable(self):
         vim = shutil.which("vim")
         if vim is None:

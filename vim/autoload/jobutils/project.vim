@@ -37,16 +37,17 @@ function! s:run(title, command, directory) abort
     echoerr 'JobUtils: executable not found: ' . split(a:command)[0]
     return
   endif
-  let l:change_directory = has('win32') ? 'cd /d ' : 'cd '
-  let l:shell_command = l:change_directory . shellescape(a:directory)
-        \ . ' && ' . a:command . ' 2>&1'
-  let l:output = system(l:shell_command)
+  let l:previous_directory = getcwd()
+  execute 'noautocmd keepjumps lcd ' . fnameescape(a:directory)
+  let l:output = system(a:command . ' 2>&1')
+  let l:exit_code = v:shell_error
+  execute 'noautocmd keepjumps lcd ' . fnameescape(l:previous_directory)
   let l:lines = split(l:output, '\n', 1)
   call setqflist([], 'r', {'title': a:title, 'lines': l:lines})
   if !empty(l:lines)
     copen
   endif
-  if v:shell_error != 0
+  if l:exit_code != 0
     echoerr 'JobUtils: ' . a:title . ' failed'
     return
   endif
@@ -118,6 +119,9 @@ function! jobutils#project#format_current() abort
     return
   endif
   let l:lines = split(l:output, '\n', 1)
+  if !empty(l:output) && !empty(l:lines) && empty(l:lines[-1])
+    call remove(l:lines, -1)
+  endif
   call setline(1, l:lines)
   if line('$') > len(l:lines)
     execute (len(l:lines) + 1) . ',$delete _'

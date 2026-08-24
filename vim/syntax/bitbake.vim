@@ -5,6 +5,16 @@ if exists('b:current_syntax')
   finish
 endif
 
+" Prefer a syntax file supplied by Vim or another runtime when available.
+" This file remains a fallback for older Vim installations.
+let s:syntax_files = split(globpath(&runtimepath, 'syntax/bitbake.vim', 1), '\n')
+if len(s:syntax_files) > 1
+  execute 'source ' . fnameescape(s:syntax_files[-1])
+  unlet s:syntax_files
+  finish
+endif
+unlet s:syntax_files
+
 syn case match
 syn keyword bitbakeDirective inherit include require export unset addtask
 syn keyword bitbakeDirective python fakeroot network nostamp cleandirs
@@ -32,4 +42,5 @@ hi def link bitbakeShellFunction Function
 hi def link bitbakeComment Comment
 hi def link bitbakeTodo Todo
 
+let b:jobutils_bitbake_fallback = 1
 let b:current_syntax = 'bitbake'
