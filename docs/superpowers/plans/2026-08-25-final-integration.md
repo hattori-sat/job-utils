@@ -120,9 +120,14 @@ Implementation steps use checkbox (`- [ ]`) syntax for tracking.
 - Modify: `docs/setup/README.md`
 - Modify: `docs/superpowers/plans/2026-08-25-final-integration.md`
 
-- [ ] Reconcile the roadmap and setup guide with the implemented command names and data fields.
-- [ ] Run the complete test suite and `git diff --check`.
-- [ ] Inspect the public diff for credentials, real Atlassian URLs/IDs, local paths, generated output, and user-specific configuration.
-- [ ] Review changed public documentation for process residue or private data and remove anything not needed by readers.
-- [ ] Run a final patch review and resolve all Critical/Important findings.
+- [x] Reconcile the roadmap and setup guide with the implemented command names and data fields.
+- [x] Run the complete test suite and `git diff --check`.
+- [x] Inspect the public diff for credentials, real Atlassian URLs/IDs, local paths, generated output, and user-specific configuration.
+- [x] Review changed public documentation for process residue or private data and remove anything not needed by readers.
+- [x] Run a final patch review and resolve all Critical/Important findings.
 - [ ] Push only `codex/pr-final-integration` and open one PR against `main`; do not merge it.
+
+Verification so far: 83 tests pass, the whitespace check is clean, and the staged
+public diff contains no credentials, real Atlassian identifiers, or local user
+paths. The final review also covered recursive parent resolution, plan-file
+handling, configured Jira defaults, and report privacy.
