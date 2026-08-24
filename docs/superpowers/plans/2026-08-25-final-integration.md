@@ -125,7 +125,7 @@ Implementation steps use checkbox (`- [ ]`) syntax for tracking.
 - [x] Inspect the public diff for credentials, real Atlassian URLs/IDs, local paths, generated output, and user-specific configuration.
 - [x] Review changed public documentation for process residue or private data and remove anything not needed by readers.
 - [x] Run a final patch review and resolve all Critical/Important findings.
-- [ ] Push only `codex/pr-final-integration` and open one PR against `main`; do not merge it.
+- [x] Push only `codex/pr-final-integration` and open one PR against `main`; do not merge it.
 
 Verification so far: 83 tests pass, the whitespace check is clean, and the staged
 public diff contains no credentials, real Atlassian identifiers, or local user
