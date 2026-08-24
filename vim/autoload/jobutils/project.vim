@@ -38,6 +38,8 @@ function! s:run(title, command, directory) abort
     return
   endif
   let l:previous_directory = getcwd()
+  let l:previous_global_directory = getcwd(-1)
+  let l:previous_tab_directory = getcwd(-1, 0)
   let l:previous_scope = haslocaldir()
   let l:output = ''
   let l:exit_code = 1
@@ -46,13 +48,15 @@ function! s:run(title, command, directory) abort
     let l:output = system(a:command . ' 2>&1')
     let l:exit_code = v:shell_error
   finally
-    " :cd clears any temporary window/tab-local scope before restoring the
-    " scope that was active when the command started.
-    execute 'noautocmd keepjumps cd ' . fnameescape(l:previous_directory)
-    if l:previous_scope == 1
+    if l:previous_scope == 0
+      execute 'noautocmd keepjumps cd ' . fnameescape(l:previous_global_directory)
+    elseif l:previous_scope == 1
       execute 'noautocmd keepjumps lcd ' . fnameescape(l:previous_directory)
-    elseif l:previous_scope == 2
-      execute 'noautocmd keepjumps tcd ' . fnameescape(l:previous_directory)
+    else
+      " :cd clears the temporary window scope; :tcd then restores the
+      " original tab scope without changing the saved global directory.
+      execute 'noautocmd keepjumps cd ' . fnameescape(l:previous_global_directory)
+      execute 'noautocmd keepjumps tcd ' . fnameescape(l:previous_tab_directory)
     endif
   endtry
   let l:lines = split(l:output, '\n', 1)

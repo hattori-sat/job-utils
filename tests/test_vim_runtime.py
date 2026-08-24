@@ -302,8 +302,9 @@ class VimRuntimeTests(unittest.TestCase):
                     "+set rtp^=" + str(vim_runtime),
                     "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
                     "+edit " + str(source),
+                    "+lcd " + str(root),
                     "+JobutilsCMakeConfigure",
-                    "+call writefile([getqflist({'title': 1}).title, getqflist()[0].text, string(haslocaldir())], '" + str(result_file) + "')",
+                    "+call writefile([getqflist({'title': 1}).title, getqflist()[0].text, string(haslocaldir()), getcwd(-1)], '" + str(result_file) + "')",
                     "+qa!",
                 ],
                 capture_output=True,
@@ -314,7 +315,7 @@ class VimRuntimeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertEqual(
                 result_file.read_text(encoding="utf-8").splitlines(),
-                ["CMake configure", "fake cmake configure", "0"],
+                ["CMake configure", "fake cmake configure", "1", str(Path.cwd())],
             )
 
     def test_clang_format_replaces_buffer_without_extra_eof_line(self):
