@@ -15,7 +15,8 @@ tests, and examples.
 - Preserve the current Vim-centered workflow while moving shared behavior into
   testable Python/domain code.
 - Treat `gtd.md` as the task index and `docs.md` as the document index.
-- Never dispatch an item back into Inbox.
+- Allow an explicit `inbox` prefix to return an item to Inbox; leave
+  unprefixed Inbox capture lines in place.
 - Keep Focus at three or fewer items and fail before mutation when a fourth
   would be introduced.
 - Keep Calendar and Waiting as distinct concepts.

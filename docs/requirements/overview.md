@@ -9,7 +9,8 @@ Markdown data is maintained in a separate Git repository.
 
 - Dispatch GTD items from `gtd.md` using prefixes.
 - Keep task and document Markdown in the separate GTD Repository.
-- Create and maintain task detail Markdown with YAML front matter.
+- Create and maintain task detail Markdown with YAML front matter only for
+  items explicitly selected with the task-creation command.
 - Represent task relationships, document references, Jira issues, and
   Confluence pages with stable identifiers.
 - Publish selected task content to Jira and selected document content to
@@ -26,8 +27,11 @@ Markdown data is maintained in a separate Git repository.
 
 - The job-utils Repository and GTD Repository are separate.
 - `gtd.md` is the GTD task index; `docs.md` is the document index.
-- Inbox is an intake area and is not a dispatch destination.
-- Known non-Inbox prefixes may move freely between sections.
+- Inbox is an intake area and a valid dispatch destination for returning an
+  item to clarification.
+- Known prefixes may move freely between sections.
+- GTD dispatch moves items without creating detail files; task creation is an
+  explicit operation for the selected item.
 - `focus` may contain at most three items. A fourth item causes an atomic
   dispatch failure.
 - Calendar time is scheduled time, not waiting time.

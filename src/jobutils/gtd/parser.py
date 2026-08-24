@@ -47,7 +47,7 @@ def scan_items(lines: Iterable[str]) -> Tuple[List[TaskItem], List[Tuple[int, st
 
         section_prefix = SECTION_TO_PREFIX.get(current_section)
         unprefixed = UNPREFIXED_ITEM_RE.match(line)
-        if section_prefix and unprefixed:
+        if section_prefix and section_prefix != "inbox" and unprefixed:
             title, link = split_title_link(unprefixed.group(1))
             items.append(
                 TaskItem(index, title, section_prefix, current_section, link, False)

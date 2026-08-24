@@ -24,8 +24,9 @@ flowchart LR
 ```
 
 The diagram shows common transitions, not an exhaustive allow-list. Any known
-non-Inbox destination is valid from any known source. Inbox is shown only as
-an intake origin and is never a dispatch destination.
+destination, including Inbox, is valid from any known source. Returning an
+item to Inbox means that it needs clarification again; it does not erase its
+identity or history.
 
 ## Time interpretation
 

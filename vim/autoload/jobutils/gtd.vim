@@ -8,6 +8,16 @@ function! s:repo_root() abort
   return fnamemodify(l:gtd, ':p:h')
 endfunction
 
+function! s:document_root() abort
+  let l:current = expand('%:p')
+  let l:directory = empty(l:current) ? getcwd() : fnamemodify(l:current, ':h')
+  let l:docs = findfile('docs.md', l:directory . ';')
+  if empty(l:docs)
+    return ''
+  endif
+  return fnamemodify(l:docs, ':p:h')
+endfunction
+
 function! s:python_command() abort
   return get(g:, 'jobutils_python', has('win32') ? 'python' : 'python3')
 endfunction
@@ -21,6 +31,17 @@ function! s:run(args) abort
   let l:command = shellescape(s:python_command()) . ' -m jobutils ' . a:args
         \ . ' --repo ' . shellescape(l:root)
         \ . ' --gtd-file ' . shellescape(l:root . '/gtd.md')
+  let l:output = system(l:command)
+  return {'ok': v:shell_error == 0, 'output': l:output}
+endfunction
+
+function! s:run_cli(args) abort
+  let l:root = s:repo_root()
+  if empty(l:root)
+    return {'ok': 0, 'output': 'GTD: gtd.md was not found from the current file'}
+  endif
+  let l:command = shellescape(s:python_command()) . ' -m jobutils ' . a:args
+        \ . ' --repo ' . shellescape(l:root)
   let l:output = system(l:command)
   return {'ok': v:shell_error == 0, 'output': l:output}
 endfunction
@@ -45,14 +66,43 @@ function! s:show_error(output, fallback) abort
   endfor
 endfunction
 
+function! s:current_item_title() abort
+  let l:line = getline('.')
+  if l:line !~# '^\s*-\s*[A-Za-z0-9_-]\+:'
+    return ''
+  endif
+  let l:title = substitute(l:line, '^\s*-\s*[A-Za-z0-9_-]\+:\s*', '', '')
+  return substitute(l:title, '\s\+<[^<>]\+\.md>\s*$', '', '')
+endfunction
+
+function! s:reload_current_buffer() abort
+  if &buftype ==# ''
+    silent! edit!
+  endif
+endfunction
+
+function! s:reload_and_restore_item(title) abort
+  call s:reload_current_buffer()
+  if empty(a:title)
+    return
+  endif
+  let l:pattern = '\V' . escape(a:title, '\')
+  let l:found = search(l:pattern, 'W')
+  if !l:found
+    call cursor(1, 1)
+    call search(l:pattern, 'W')
+  endif
+endfunction
+
 function! jobutils#gtd#dispatch() abort
+  let l:title = s:current_item_title()
   update
   let l:result = s:run('gtd dispatch')
   if !l:result.ok
     call s:show_error(l:result.output, 'GTD: dispatch failed')
     return
   endif
-  checktime
+  call s:reload_and_restore_item(l:title)
   echo 'GTD: dispatch done'
 endfunction
 
@@ -69,6 +119,86 @@ function! jobutils#gtd#task() abort
     echoerr 'GTD: task path was not returned'
     return
   endif
+  call s:reload_current_buffer()
+  execute 'hide edit ' . fnameescape(l:path)
+endfunction
+
+function! s:current_task_path() abort
+  let l:root = resolve(s:repo_root())
+  let l:current = resolve(expand('%:p'))
+  if empty(l:root) || empty(l:current)
+    return ''
+  endif
+  let l:root = substitute(l:root, '/$', '', '')
+  let l:task_prefix = l:root . '/gtd_tasks/'
+  if stridx(l:current, l:task_prefix) != 0
+    return ''
+  endif
+  return substitute(strpart(l:current, strlen(l:root) + 1), '\\', '/', 'g')
+endfunction
+
+function! s:in_subtasks_section() abort
+  let l:inside = 0
+  for l:index in range(1, line('.'))
+    let l:heading = getline(l:index)
+    if l:heading =~# '^#\s\+Subtasks\s*$'
+      let l:inside = 1
+    elseif l:heading =~# '^#\s\+' && l:inside
+      let l:inside = 0
+    endif
+  endfor
+  return l:inside
+endfunction
+
+function! jobutils#gtd#subtask() abort
+  let l:parent = s:current_task_path()
+  if empty(l:parent)
+    echoerr 'GTD: subtask must be created from a task Markdown file'
+    return
+  endif
+  if !s:in_subtasks_section()
+    echoerr 'GTD: place the cursor under the # Subtasks heading'
+    return
+  endif
+  update
+  let l:line = line('.')
+  let l:result = s:run_cli(
+        \ 'gtd subtask --line ' . l:line . ' --parent ' . shellescape(l:parent)
+        \ )
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: subtask failed')
+    return
+  endif
+  let l:path = substitute(split(l:result.output, '\n')[0], '\n\+$', '', '')
+  if empty(l:path) || !filereadable(l:path)
+    echoerr 'GTD: subtask path was not returned'
+    return
+  endif
+  call s:reload_current_buffer()
+  execute 'hide edit ' . fnameescape(l:path)
+endfunction
+function! jobutils#gtd#document() abort
+  update
+  let l:root = s:document_root()
+  if empty(l:root)
+    echoerr 'GTD: docs.md was not found from the current file'
+    return
+  endif
+  let l:command = shellescape(s:python_command()) . ' -m jobutils gtd document'
+        \ . ' --repo ' . shellescape(l:root)
+        \ . ' --docs-file ' . shellescape(l:root . '/docs.md')
+        \ . ' --line ' . line('.')
+  let l:output = system(l:command)
+  if v:shell_error != 0
+    call s:show_error(l:output, 'GTD: document failed')
+    return
+  endif
+  let l:path = substitute(split(l:output, '\n')[0], '\n\+$', '', '')
+  if empty(l:path) || !filereadable(l:path)
+    echoerr 'GTD: document path was not returned'
+    return
+  endif
+  call s:reload_current_buffer()
   execute 'hide edit ' . fnameescape(l:path)
 endfunction
 

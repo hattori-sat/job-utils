@@ -12,8 +12,9 @@ for collecting the current buffer context and presenting the result or error.
 
 ## Destination rules
 
-1. A known non-Inbox prefix is a valid destination.
-2. Inbox is never a valid dispatch destination.
+1. Every known prefix, including `inbox`, is a valid destination.
+2. An `inbox` transition returns the item to the Inbox section and is recorded
+   as a normal state transition.
 3. An unknown prefix is not silently converted to another prefix. The command
    must reject it or leave the item unchanged according to the parser result.
 4. Existing section names and whole-file scanning behavior remain supported;
@@ -24,7 +25,9 @@ for collecting the current buffer context and presenting the result or error.
 Dispatch is a preflight-and-commit operation:
 
 1. Parse the current item, its source section, and its requested destination.
-2. Validate the destination and resolve or create the stable task identity.
+2. Validate the destination and resolve the stable task identity only for an
+   already-linked task; task identity creation is an explicit `GtdTask` or
+   `GtdSubtask` operation.
 3. Compute the resulting section counts from the proposed change.
 4. Reject the operation before writing when the resulting Focus count would be
    greater than three.
@@ -45,15 +48,19 @@ but the Vim failure line remains stable for scripts and muscle memory.
 
 ## Identity and linked Markdown
 
-When a known non-`done` item has no detail link, the first successful dispatch
-creates one task Markdown file below `gtd_tasks/`, assigns a UUID, and replaces
-the index line with the generated link. Existing links and UUIDs are reused.
-An unlinked `done` item is invalid and is not auto-created; this preserves the
-safety rule that completed work must have a detail record before it is closed.
+Dispatch does not create task Markdown. A known item without a detail link is
+moved as an unlinked item. The explicit Vim `:GtdTask` command or Python
+`gtd task` operation creates one task Markdown file below `gtd_tasks/`, assigns
+a UUID, and replaces only the selected index line with the generated link.
+Existing links and UUIDs are reused. An unlinked `done` item is invalid and is
+not auto-created; this preserves the safety rule that completed work must have
+a detail record before it is closed.
 
 ## Observability
 
-Every successful prefix change produces a metric event containing the previous
-and new prefixes. A failed dispatch produces an error event without changing
-the task state. `wait` starts waiting-time accounting; `cal` records scheduled
-intent and does not start waiting-time accounting.
+Every successful prefix change on a linked task produces a metric event
+containing the previous and new prefixes. Creating a task through `:GtdTask` or
+`gtd task` produces its capture event. Moving an unlinked item does not create a
+task identity or metric event. A failed dispatch produces an error event
+without changing the task state. `wait` starts waiting-time accounting; `cal`
+records scheduled intent and does not start waiting-time accounting.
