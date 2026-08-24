@@ -11,6 +11,7 @@ document pages, and `.jobutils/` runtime data.
 
 - [Requirements](docs/requirements/overview.md)
 - [Document map](docs/design/document-map.md)
+- [Implementation roadmap](docs/design/implementation-roadmap.md)
 - [Research notes](docs/research/)
 - [Specifications](spec/)
 - [Agent guidance](docs/agent/project-guidance.md)
