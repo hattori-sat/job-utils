@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from .config import validate_config
 from .env import load_local_env
-from .gtd import DispatchError, create_task, dispatch
+from .gtd import DocumentError, DispatchError, create_document, create_task, dispatch
 from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
@@ -34,6 +34,10 @@ def _parser() -> argparse.ArgumentParser:
     task_parser.add_argument("--repo", default=".")
     task_parser.add_argument("--gtd-file", default=None)
     task_parser.add_argument("--line", type=int, required=True)
+    document_parser = gtd_subparsers.add_parser("document")
+    document_parser.add_argument("--repo", default=".")
+    document_parser.add_argument("--docs-file", default=None)
+    document_parser.add_argument("--line", type=int, required=True)
     metrics = subparsers.add_parser("metrics")
     metrics_subparsers = metrics.add_subparsers(dest="operation")
     report_parser = metrics_subparsers.add_parser("report")
@@ -207,11 +211,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         except (OSError, ValueError, SyncError, RuntimeError, KeyError) as error:
             print("SYNC: pull failed: {}".format(error), file=sys.stderr)
             return 1
-    if args.domain != "gtd" or args.operation not in ("dispatch", "task"):
+    if args.domain != "gtd" or args.operation not in ("dispatch", "task", "document"):
         _parser().print_help()
         return 2
     repo = Path(args.repo)
-    gtd_path = Path(args.gtd_file) if args.gtd_file else repo / "gtd.md"
+    gtd_path = (
+        Path(args.gtd_file) if getattr(args, "gtd_file", None) else repo / "gtd.md"
+    )
     try:
         if args.operation == "dispatch":
             result = dispatch(repo, gtd_path, args.machine_id)
@@ -227,13 +233,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                     sort_keys=True,
                 )
             )
-        else:
+        elif args.operation == "task":
             print(str(create_task(repo, args.line, gtd_path)))
+        else:
+            docs_path = Path(args.docs_file) if args.docs_file else repo / "docs.md"
+            print(str(create_document(repo, args.line, docs_path)))
         return 0
-    except DispatchError as error:
+    except (DispatchError, DocumentError) as error:
         if args.operation == "dispatch":
             print("GTD: dispatch failed", file=sys.stderr)
-        else:
+        elif args.operation == "task":
             print("GTD: task failed", file=sys.stderr)
+        else:
+            print("GTD: document failed", file=sys.stderr)
         print(str(error), file=sys.stderr)
         return 1

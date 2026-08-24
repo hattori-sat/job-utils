@@ -8,6 +8,16 @@ function! s:repo_root() abort
   return fnamemodify(l:gtd, ':p:h')
 endfunction
 
+function! s:document_root() abort
+  let l:current = expand('%:p')
+  let l:directory = empty(l:current) ? getcwd() : fnamemodify(l:current, ':h')
+  let l:docs = findfile('docs.md', l:directory . ';')
+  if empty(l:docs)
+    return ''
+  endif
+  return fnamemodify(l:docs, ':p:h')
+endfunction
+
 function! s:python_command() abort
   return get(g:, 'jobutils_python', has('win32') ? 'python' : 'python3')
 endfunction
@@ -67,6 +77,30 @@ function! jobutils#gtd#task() abort
   let l:path = substitute(split(l:result.output, '\n')[0], '\n\+$', '', '')
   if empty(l:path) || !filereadable(l:path)
     echoerr 'GTD: task path was not returned'
+    return
+  endif
+  execute 'hide edit ' . fnameescape(l:path)
+endfunction
+
+function! jobutils#gtd#document() abort
+  update
+  let l:root = s:document_root()
+  if empty(l:root)
+    echoerr 'GTD: docs.md was not found from the current file'
+    return
+  endif
+  let l:command = shellescape(s:python_command()) . ' -m jobutils gtd document'
+        \ . ' --repo ' . shellescape(l:root)
+        \ . ' --docs-file ' . shellescape(l:root . '/docs.md')
+        \ . ' --line ' . line('.')
+  let l:output = system(l:command)
+  if v:shell_error != 0
+    call s:show_error(l:output, 'GTD: document failed')
+    return
+  endif
+  let l:path = substitute(split(l:output, '\n')[0], '\n\+$', '', '')
+  if empty(l:path) || !filereadable(l:path)
+    echoerr 'GTD: document path was not returned'
     return
   endif
   execute 'hide edit ' . fnameescape(l:path)

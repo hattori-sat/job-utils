@@ -81,6 +81,7 @@ The existing Vim configuration remains yours. The current runtime provides:
 
 - `:Gtd` / `:gtd` — dispatch the GTD index;
 - `:GtdTask` / `:gtdtask` — create or open the current task detail;
+- `:GtdDoc` / `:gtddoc` — create or open the current document detail;
 - `:GtdTags` — show the standard tag catalog;
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;

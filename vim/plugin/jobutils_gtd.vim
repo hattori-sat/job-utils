@@ -5,6 +5,7 @@ let g:loaded_jobutils_gtd = 1
 
 command! Gtd call jobutils#gtd#dispatch()
 command! GtdTask call jobutils#gtd#task()
+command! GtdDoc call jobutils#gtd#document()
 command! GtdTags call jobutils#gtd#catalog()
 command! GtdImpactLevels call jobutils#gtd#catalog()
 command! GtdMetricsHelp call jobutils#gtd#metrics_help()
@@ -20,3 +21,5 @@ cnoreabbrev <expr> gtd
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtd' ? 'Gtd' : 'gtd'
 cnoreabbrev <expr> gtdtask
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdtask' ? 'GtdTask' : 'gtdtask'
+cnoreabbrev <expr> gtddoc
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtddoc' ? 'GtdDoc' : 'gtddoc'
