@@ -20,7 +20,9 @@ def read_events(repo_root: Path) -> Tuple[List[Dict], List[str]]:
     events: List[Dict] = []
     errors: List[str] = []
     seen = set()
+    repo_root = Path(repo_root).resolve()
     for path in event_paths(repo_root):
+        display_path = str(path.relative_to(repo_root)).replace("\\", "/")
         for line_number, line in enumerate(
             path.read_text(encoding="utf-8").splitlines(), 1
         ):
@@ -29,17 +31,19 @@ def read_events(repo_root: Path) -> Tuple[List[Dict], List[str]]:
             try:
                 event = json.loads(line)
             except ValueError as error:
-                errors.append("{}:{}: {}".format(path, line_number, error))
+                errors.append("{}:{}: {}".format(display_path, line_number, error))
                 continue
             event_id = event.get("event_id")
             if not event_id or event_id in seen:
                 if event_id:
                     continue
-                errors.append("{}:{}: missing event_id".format(path, line_number))
+                errors.append("{}:{}: missing event_id".format(display_path, line_number))
                 continue
             if not event.get("gtd_id") or not event.get("occurred_at"):
                 errors.append(
-                    "{}:{}: missing gtd_id or occurred_at".format(path, line_number)
+                    "{}:{}: missing gtd_id or occurred_at".format(
+                        display_path, line_number
+                    )
                 )
                 continue
             seen.add(event_id)

@@ -1,8 +1,10 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
@@ -166,6 +168,12 @@ impact_level: medium
         self.assertIn("jira_parent_key: null", text)
         self.assertIn("jira_key: null", text)
         self.assertIn("jira_url: null", text)
+
+    def test_created_task_uses_configured_default_jira_issue_type(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Configured type\n")
+        with patch.dict(os.environ, {"JIRA_ISSUE_TYPE": "Story"}, clear=False):
+            path = create_task(self.repo, 5)
+        self.assertIn("jira_issue_type: 'Story'", path.read_text(encoding="utf-8"))
 
     def test_create_subtask_under_parent_directory_and_links_jira_parent(self):
         self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Child work\n")

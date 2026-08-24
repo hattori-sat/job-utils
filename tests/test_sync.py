@@ -107,6 +107,47 @@ Private content.
             apply_plan(self.repo, plan, adapter)
         self.assertEqual(adapter.records, {})
 
+    def test_explicit_parent_path_never_falls_back_to_default_parent(self):
+        child = self.repo / "documents" / "child.md"
+        child.write_text(
+            "---\ngtd_id: child\nkind: document\ntitle: Child\npublish_confluence: true\nconfluence_space_id: space-1\nconfluence_space_key: DOC\nconfluence_parent_path: documents/missing.md\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+        with patch.dict(
+            os.environ, {"CONFLUENCE_PARENT_ID": "default-parent"}, clear=False
+        ):
+            plan = create_plan(self.repo)
+        with self.assertRaisesRegex(SyncError, "parent page is unresolved"):
+            apply_plan(self.repo, plan, MemoryAdapter())
+
+    def test_explicit_parent_paths_are_applied_in_dependency_order(self):
+        parent = self.repo / "documents" / "parent.md"
+        child = self.repo / "documents" / "child.md"
+        parent.write_text(
+            "---\nkind: document\ntitle: Parent\npublish_confluence: true\n---\n\n# Parent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\nkind: document\ntitle: Child\npublish_confluence: true\nconfluence_parent_path: documents/parent.md\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        self.assertEqual(
+            [action["path"] for action in plan["actions"]],
+            ["documents/parent.md", "documents/child.md"],
+        )
+
+    def test_cyclic_confluence_parent_paths_are_rejected(self):
+        for name, parent_path in (("a", "documents/b.md"), ("b", "documents/a.md")):
+            (self.repo / "documents" / (name + ".md")).write_text(
+                "---\nkind: document\ntitle: {}\npublish_confluence: true\nconfluence_parent_path: {}\n---\n\n# {}\n".format(
+                    name, parent_path, name
+                ),
+                encoding="utf-8",
+            )
+        with self.assertRaisesRegex(SyncError, "cyclic Confluence"):
+            create_plan(self.repo)
+
     def test_plan_infers_document_parent_from_recursive_path(self):
         parent = self.repo / "documents" / "parent.md"
         child = parent.with_suffix("") / "child.md"
@@ -352,6 +393,29 @@ Objective.
 
         with self.assertRaisesRegex(SyncError, "invalid structure"):
             apply_plan(self.repo, plan, MemoryAdapter())
+
+    def test_sync_status_ignores_symlinked_plans(self):
+        plans = self.repo / ".jobutils" / "sync" / "plans"
+        plans.mkdir(parents=True)
+        target = plans / "real.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "plan_id": "real",
+                    "created_at": "2026-08-25T10:00:00Z",
+                    "source_hash": "0" * 64,
+                    "actions": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        try:
+            (plans / "link.json").symlink_to(target)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks are not available")
+        status = sync_status(self.repo)
+        self.assertEqual(status["plan_count"], 1)
+        self.assertEqual(status["latest_plan"], ".jobutils/sync/plans/real.json")
 
 
 if __name__ == "__main__":

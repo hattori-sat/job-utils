@@ -117,7 +117,7 @@ def html_text(report: Dict) -> str:
             task["waiting_seconds"],
             task["scheduled_seconds"],
             html.escape(task["final_prefix"] or ""),
-            "yes" if task["completed_at"] else "no",
+            "yes" if task["completed_in_period"] else "no",
             html.escape(", ".join(task["tags"])),
         )
         for task in report["tasks"]

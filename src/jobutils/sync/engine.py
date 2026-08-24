@@ -148,8 +148,35 @@ def create_plan(repo_root: Path) -> Dict:
         "plan_id": str(uuid.uuid4()),
         "created_at": datetime.utcnow().isoformat() + "Z",
         "source_hash": _source_hash(repo_root, published_paths),
-        "actions": actions,
+        "actions": _order_actions(actions),
     }
+
+
+def _order_actions(actions: List[Dict]) -> List[Dict]:
+    """Order actions so Confluence parents are applied before children."""
+
+    by_path = {action["path"]: action for action in actions}
+    ordered: List[Dict] = []
+    visiting = set()
+    visited = set()
+
+    def visit(path: str) -> None:
+        if path in visiting:
+            raise SyncError("cyclic Confluence parent relationship: {}".format(path))
+        if path in visited:
+            return
+        visiting.add(path)
+        action = by_path[path]
+        parent_path = action.get("parent_path") if action["kind"] == "confluence" else None
+        if parent_path in by_path:
+            visit(parent_path)
+        visiting.remove(path)
+        visited.add(path)
+        ordered.append(action)
+
+    for action in actions:
+        visit(action["path"])
+    return ordered
 
 
 def save_plan(repo_root: Path, plan: Dict) -> Path:
@@ -176,6 +203,8 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
     plan_records = []
     latest_plan = None
     for path in plan_paths:
+        if path.is_symlink() or not path.is_file():
+            continue
         try:
             plan = json.loads(path.read_text(encoding="utf-8"))
             if _is_valid_plan(plan):
@@ -357,8 +386,6 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 if parent.is_file():
                     parent_lines = parent.read_text(encoding="utf-8").splitlines()
                     parent_id = frontmatter.value(parent_lines, "confluence_page_id")
-            if not parent_id:
-                parent_id = payload.get("parent_id")
             if not parent_id:
                 raise SyncError(
                     "Confluence parent page is unresolved: {}".format(parent_path)

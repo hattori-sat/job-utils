@@ -19,6 +19,12 @@ class DocumentError(Exception):
     """A user-correctable Document Markdown operation error."""
 
 
+def _is_true(value: Optional[str]) -> bool:
+    """Interpret the boolean spellings accepted by front matter and config."""
+
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+
 def _atomic_write(path: Path, content: str) -> None:
     """Write a file through a same-directory replacement."""
 
@@ -220,9 +226,7 @@ def create_subdocument(repo_root: Path, parent_path: str, line_number: int) -> P
         "updated_at: {}".format(frontmatter.quote(date.today().isoformat())),
         "tags: []",
         "publish_confluence: {}".format(
-            "true"
-            if (frontmatter.value(lines, "publish_confluence") or "").lower() == "true"
-            else "false"
+            "true" if _is_true(frontmatter.value(lines, "publish_confluence")) else "false"
         ),
         "parent_document_id: {}".format(frontmatter.quote(parent_id)),
         "confluence_space_id: {}".format(

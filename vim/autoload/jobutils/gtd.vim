@@ -93,6 +93,9 @@ function! s:sync_plan_path(root, requested) abort
     if !filereadable(l:requested_path)
       return ''
     endif
+    if getftype(l:requested_path) !=# 'file'
+      return ''
+    endif
     let l:candidate = resolve(fnamemodify(l:requested_path, ':p'))
     let l:left = substitute(l:candidate, '\\', '/', 'g')
     let l:right = substitute(l:plan_prefix, '\\', '/', 'g')
@@ -111,7 +114,17 @@ function! s:sync_plan_path(root, requested) abort
     return ''
   endif
   let l:candidate = a:root . '/' . substitute(l:latest, '\\', '/', 'g')
-  return filereadable(l:candidate) ? resolve(fnamemodify(l:candidate, ':p')) : ''
+  if !filereadable(l:candidate) || getftype(l:candidate) !=# 'file'
+    return ''
+  endif
+  let l:candidate = resolve(fnamemodify(l:candidate, ':p'))
+  let l:left = substitute(l:candidate, '\\', '/', 'g')
+  let l:right = substitute(l:plan_prefix, '\\', '/', 'g')
+  if has('win32')
+    let l:left = tolower(l:left)
+    let l:right = tolower(l:right)
+  endif
+  return stridx(l:left, l:right) == 0 ? l:candidate : ''
 endfunction
 
 function! s:current_item_title() abort
@@ -251,13 +264,18 @@ function! jobutils#gtd#document() abort
 endfunction
 
 function! s:current_document_path() abort
-  let l:root = resolve(s:document_root())
-  let l:current = resolve(expand('%:p'))
+  let l:root = substitute(resolve(s:document_root()), '\\', '/', 'g')
+  let l:current = substitute(resolve(expand('%:p')), '\\', '/', 'g')
   if empty(l:root) || empty(l:current)
     return ''
   endif
   let l:root = substitute(l:root, '/$', '', '')
   let l:prefix = l:root . '/documents/'
+  if has('win32')
+    let l:root = tolower(l:root)
+    let l:current = tolower(l:current)
+    let l:prefix = tolower(l:prefix)
+  endif
   if stridx(l:current, l:prefix) != 0
     return ''
   endif

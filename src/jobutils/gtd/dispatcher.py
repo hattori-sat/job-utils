@@ -152,7 +152,7 @@ def _task_template(
     parent_gtd_id: Optional[str] = None,
     jira_parent_key: Optional[str] = None,
     jira_project: Optional[str] = None,
-    jira_issue_type: str = "Task",
+    jira_issue_type: Optional[str] = None,
     publish_jira: bool = False,
 ) -> str:
     """Build the compact task document created by the first GTD dispatch."""
@@ -422,7 +422,7 @@ def create_task(
     parent_gtd_id = None
     jira_parent_key = None
     jira_project = None
-    jira_issue_type = "Task"
+    jira_issue_type = None
     publish_jira = False
     if parent_path:
         parent = _safe_link(repo_root, parent_path)

@@ -110,6 +110,16 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(report["task_count"], 1)
         self.assertEqual(report["read_errors"], [])
 
+    def test_read_errors_use_repository_relative_paths(self):
+        event_path = self.repo / ".jobutils/metrics/events/2026.jsonl"
+        event_path.write_text("not json\n", encoding="utf-8")
+        report = build_report(self.repo, "2026-01-01", "2026-01-01")
+        self.assertTrue(report["read_errors"])
+        self.assertNotIn(str(self.repo), report["read_errors"][0])
+        self.assertTrue(
+            report["read_errors"][0].startswith(".jobutils/metrics/events/")
+        )
+
     def test_reports_lead_cycle_estimate_and_grouped_throughput(self):
         event_path = self.repo / ".jobutils/metrics/events/2026.jsonl"
         event_path.write_text(
