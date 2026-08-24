@@ -55,14 +55,43 @@ function! s:show_error(output, fallback) abort
   endfor
 endfunction
 
+function! s:current_item_title() abort
+  let l:line = getline('.')
+  if l:line !~# '^\s*-\s*[A-Za-z0-9_-]\+:'
+    return ''
+  endif
+  let l:title = substitute(l:line, '^\s*-\s*[A-Za-z0-9_-]\+:\s*', '', '')
+  return substitute(l:title, '\s\+<[^<>]\+\.md>\s*$', '', '')
+endfunction
+
+function! s:reload_current_buffer() abort
+  if &buftype ==# ''
+    silent! edit!
+  endif
+endfunction
+
+function! s:reload_and_restore_item(title) abort
+  call s:reload_current_buffer()
+  if empty(a:title)
+    return
+  endif
+  let l:pattern = '\V' . escape(a:title, '\')
+  let l:found = search(l:pattern, 'W')
+  if !l:found
+    call cursor(1, 1)
+    call search(l:pattern, 'W')
+  endif
+endfunction
+
 function! jobutils#gtd#dispatch() abort
+  let l:title = s:current_item_title()
   update
   let l:result = s:run('gtd dispatch')
   if !l:result.ok
     call s:show_error(l:result.output, 'GTD: dispatch failed')
     return
   endif
-  checktime
+  call s:reload_and_restore_item(l:title)
   echo 'GTD: dispatch done'
 endfunction
 
@@ -79,6 +108,7 @@ function! jobutils#gtd#task() abort
     echoerr 'GTD: task path was not returned'
     return
   endif
+  call s:reload_current_buffer()
   execute 'hide edit ' . fnameescape(l:path)
 endfunction
 
@@ -103,6 +133,7 @@ function! jobutils#gtd#document() abort
     echoerr 'GTD: document path was not returned'
     return
   endif
+  call s:reload_current_buffer()
   execute 'hide edit ' . fnameescape(l:path)
 endfunction
 
