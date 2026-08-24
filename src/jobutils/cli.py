@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from .config import validate_config
+from .env import load_local_env
 from .gtd import DispatchError, create_task, dispatch
 from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
+from .setup_workflow import SetupError, run_setup
 from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
 from .sync.engine import SyncError, apply_plan, create_plan, pull, save_plan
 
@@ -65,13 +67,38 @@ def _parser() -> argparse.ArgumentParser:
     config_subparsers = config.add_subparsers(dest="operation")
     config_validate_parser = config_subparsers.add_parser("validate")
     config_validate_parser.add_argument("--path", default="config.yaml")
+    setup = subparsers.add_parser("setup")
+    setup_subparsers = setup.add_subparsers(dest="operation")
+    setup_init = setup_subparsers.add_parser("init")
+    setup_init.add_argument("--job-utils-root", default=".")
+    setup_init.add_argument("--gtd-repo", default=None)
+    setup_init.add_argument("--platform", default=None)
+    setup_init.add_argument("--skip-env-prompt", action="store_true")
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     """Execute a command and return a shell-compatible exit status."""
 
+    load_local_env(Path(__file__).resolve().parents[2])
     args = _parser().parse_args(argv)
+    if args.domain == "setup" and args.operation == "init":
+        try:
+            gtd_repo = args.gtd_repo
+            if not gtd_repo:
+                gtd_repo = input("Enter the path to an existing empty Git Repository: ")
+            result = run_setup(
+                Path(args.job_utils_root),
+                Path(gtd_repo),
+                platform_name=args.platform,
+                skip_env_prompt=args.skip_env_prompt,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            print("setup complete")
+            return 0
+        except (OSError, SetupError, ValueError) as error:
+            print("SETUP: failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "config" and args.operation == "validate":
         errors = validate_config(Path(args.path))
         for error in errors:

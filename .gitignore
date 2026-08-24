@@ -219,3 +219,4 @@ __marimo__/
 
 # job-utils generated reports
 .jobutils/output/
+.jobutils/setup/
