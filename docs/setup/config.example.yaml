@@ -2,7 +2,7 @@
 # Credentials belong in the process environment, never in this file.
 
 publish_jira: false
-jira_project: EXAMPLE
+jira_project: YOUR_JIRA_PROJECT
 jira_issue_type: Task
 jira_parent_key: null
 jira_progress_comment_field: null

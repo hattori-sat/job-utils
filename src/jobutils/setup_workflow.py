@@ -22,7 +22,7 @@ ENV_SPECS = (
     ("JIRA_BASE_URL", "Jira base URL", False, "https://your-domain.atlassian.net"),
     ("JIRA_EMAIL", "Jira account email", False, ""),
     ("JIRA_API_TOKEN", "Jira API token", True, ""),
-    ("JIRA_PROJECT", "Jira project key", False, "LIG"),
+    ("JIRA_PROJECT", "Jira project key", False, ""),
     ("JIRA_ISSUE_TYPE", "Jira issue type", False, "Task"),
     (
         "JIRA_PROGRESS_COMMENT_FIELD",
@@ -44,9 +44,9 @@ ENV_SPECS = (
     ),
     ("CONFLUENCE_EMAIL", "Confluence account email", False, ""),
     ("CONFLUENCE_API_TOKEN", "Confluence API token", True, ""),
-    ("CONFLUENCE_SPACE_ID", "Confluence space id", False, "163844"),
-    ("CONFLUENCE_SPACE_KEY", "Confluence space key", False, "KB"),
-    ("CONFLUENCE_PARENT_ID", "Confluence parent page id", False, "210632708"),
+    ("CONFLUENCE_SPACE_ID", "Confluence space id", False, ""),
+    ("CONFLUENCE_SPACE_KEY", "Confluence space key", False, ""),
+    ("CONFLUENCE_PARENT_ID", "Confluence parent page id", False, ""),
 )
 
 GTD_TEMPLATE = """# GTD

@@ -17,28 +17,28 @@ class ConfigTests(unittest.TestCase):
 
 jira:
   base_url: https://example.invalid
-  project: LIG
+  project: EXAMPLE_PROJECT
   issue_type: Task
   email_env: JIRA_EMAIL
   token_env: JIRA_API_TOKEN
 
 confluence:
   base_url: https://example.invalid
-  space_id: '123'
-  space_key: KB
-  parent_page_id: '456'
+  space_id: '123456'
+  space_key: EXAMPLE_SPACE
+  parent_page_id: '789012'
   email_env: CONFLUENCE_EMAIL
   token_env: CONFLUENCE_API_TOKEN
 """,
                 encoding="utf-8",
             )
             self.assertEqual(validate_config(path), [])
-            self.assertEqual(load_config(path)["jira"]["project"], "LIG")
+            self.assertEqual(load_config(path)["jira"]["project"], "EXAMPLE_PROJECT")
 
     def test_reports_missing_required_values(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.yaml"
-            path.write_text("version: 1\njira:\n  project: LIG\n", encoding="utf-8")
+            path.write_text("version: 1\njira:\n  project: EXAMPLE_PROJECT\n", encoding="utf-8")
             errors = validate_config(path)
             self.assertIn("missing section: confluence", errors)
             self.assertIn("missing jira.base_url", errors)

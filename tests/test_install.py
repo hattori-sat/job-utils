@@ -36,16 +36,16 @@ class InstallTests(unittest.TestCase):
 
 jira:
   base_url: https://example.invalid
-  project: LIG
+  project: EXAMPLE_PROJECT
   issue_type: Task
   email_env: JIRA_EMAIL
   token_env: JIRA_API_TOKEN
 
 confluence:
   base_url: https://example.invalid
-  space_id: '163844'
-  space_key: KB
-  parent_page_id: '210632708'
+  space_id: '123456'
+  space_key: EXAMPLE_SPACE
+  parent_page_id: '789012'
   email_env: CONFLUENCE_EMAIL
   token_env: CONFLUENCE_API_TOKEN
 """,
