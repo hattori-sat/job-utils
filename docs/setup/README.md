@@ -106,6 +106,31 @@ Available commands include:
 - `:JobutilsProjectRoot` — show the nearest CMake project root.
 - `:JobutilsCMake` — open the nearest `CMakeLists.txt` in a split.
 
+For C, C++, and CMake projects, the project helpers use the nearest directory
+containing `CMakeLists.txt`:
+
+- `:JobutilsCMakeConfigure` — configure `<project>/build` with CMake;
+- `:JobutilsCMakeBuild` — build the configured CMake tree;
+- `:JobutilsCMakeTest` — run CTest with failure output;
+- `:JobutilsMake` — run `make` from the project root;
+- `:JobutilsClangFormat` — format the current C or C++ buffer with
+  `clang-format`;
+- `:JobutilsCompileCommands` — open `compile_commands.json` from the project
+  root or its build directory;
+- `:JobutilsQuickfix` — open the current Quickfix list.
+
+Command output is placed in the Quickfix list. Use Vim's `:cnext`, `:cprev`,
+and `:copen` to review build, test, or compiler messages. CMake, CTest,
+Make, and clang-format must be available on `PATH` when their commands are
+used.
+
+Yocto and OpenEmbedded metadata uses the `bitbake` filetype for `.bb`,
+`.bbappend`, `.bbclass`, recipe `.inc`, and `conf/*.conf` files. The runtime
+provides syntax highlighting, recipe-oriented indentation, `#` comments, and
+filename completion for common metadata extensions. It does not run BitBake
+automatically; use the project build tools or a project-specific command when
+the build environment has been initialized.
+
 The Vim runtime also enables `number`, `cursorline`, and `ruler` by default.
 Set `g:jobutils_enable_defaults = 0` before loading the runtime when the
 display defaults should remain unchanged.

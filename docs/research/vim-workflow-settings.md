@@ -17,6 +17,9 @@ external plugin for common source and document formats.
   XML, C, C++, CMakeLists.txt, and Makefile naming patterns. The repository
   uses these built-in detections instead of duplicating them in custom
   autocommands.
+- Yocto and OpenEmbedded metadata uses the `bitbake` filetype. The local
+  runtime adds detection for recipe fragments and configuration files that
+  are not covered consistently by a Vim installation.
 - `expandtab` converts inserted tabs to spaces. Make recipes are a deliberate
   exception: the Makefile filetype uses `noexpandtab` and an eight-column tab
   stop so recipe indentation remains a literal tab.
@@ -37,10 +40,23 @@ small local defaults:
 - Markdown and JSON/XML use two-column indentation.
 - C, C++, and CMake use four-column indentation.
 - Makefiles retain literal tabs and use an eight-column display width.
+- BitBake metadata uses four-column indentation, `#` comments, and common
+  recipe filename suffixes.
 - Common navigation/search defaults are enabled together with the existing
-  number, cursorline, ruler, and CMake helpers.
+  number, cursorline, ruler, CMake, build, test, formatting, and Quickfix
+  helpers.
 - `g:jobutils_enable_filetype_defaults = 0` disables the filetype/syntax layer;
   `g:jobutils_enable_defaults = 0` disables the display and editing defaults.
 
 The settings live in the job-utils runtime so setup can register them without
 rewriting the user's existing `.vimrc`.
+
+## Project command policy
+
+The project helpers keep external tool invocation explicit and local to the
+current project. CMake configure, build, and CTest use `<project>/build`;
+`make` runs from the project root. Each command captures its output in Vim's
+Quickfix list, so the standard `:copen`, `:cnext`, and `:cprev` workflow remains
+available for diagnostics. `clang-format` operates only on the current C or
+C++ buffer, and `compile_commands.json` is opened from the project root or
+build directory when present.

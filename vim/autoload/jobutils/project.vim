@@ -27,3 +27,115 @@ function! jobutils#project#open_cmake() abort
   endif
   execute 'botright split ' . fnameescape(l:root . '/CMakeLists.txt')
 endfunction
+
+function! s:build_directory(root) abort
+  return fnamemodify(a:root . '/build', ':p')
+endfunction
+
+function! s:run(title, command, directory) abort
+  if !executable(split(a:command)[0])
+    echoerr 'JobUtils: executable not found: ' . split(a:command)[0]
+    return
+  endif
+  let l:change_directory = has('win32') ? 'cd /d ' : 'cd '
+  let l:shell_command = l:change_directory . shellescape(a:directory)
+        \ . ' && ' . a:command . ' 2>&1'
+  let l:output = system(l:shell_command)
+  let l:lines = split(l:output, '\n', 1)
+  call setqflist([], 'r', {'title': a:title, 'lines': l:lines})
+  if !empty(l:lines)
+    copen
+  endif
+  if v:shell_error != 0
+    echoerr 'JobUtils: ' . a:title . ' failed'
+    return
+  endif
+  echo 'JobUtils: ' . a:title . ' completed'
+endfunction
+
+function! jobutils#project#configure() abort
+  let l:root = jobutils#project#root()
+  if empty(l:root)
+    echoerr 'JobUtils: CMakeLists.txt was not found from the current file'
+    return
+  endif
+  let l:build = s:build_directory(l:root)
+  call s:run('CMake configure',
+        \ 'cmake -S ' . shellescape(l:root) . ' -B ' . shellescape(l:build),
+        \ l:root)
+endfunction
+
+function! jobutils#project#build() abort
+  let l:root = jobutils#project#root()
+  if empty(l:root)
+    echoerr 'JobUtils: CMakeLists.txt was not found from the current file'
+    return
+  endif
+  let l:build = s:build_directory(l:root)
+  if !isdirectory(l:build)
+    echoerr 'JobUtils: build directory is missing; run :JobutilsCMakeConfigure'
+    return
+  endif
+  call s:run('CMake build', 'cmake --build ' . shellescape(l:build), l:root)
+endfunction
+
+function! jobutils#project#test() abort
+  let l:root = jobutils#project#root()
+  if empty(l:root)
+    echoerr 'JobUtils: CMakeLists.txt was not found from the current file'
+    return
+  endif
+  let l:build = s:build_directory(l:root)
+  if !isdirectory(l:build)
+    echoerr 'JobUtils: build directory is missing; run :JobutilsCMakeConfigure'
+    return
+  endif
+  call s:run('CTest', 'ctest --test-dir ' . shellescape(l:build)
+        \ . ' --output-on-failure', l:root)
+endfunction
+
+function! jobutils#project#make() abort
+  let l:root = jobutils#project#root()
+  if empty(l:root)
+    echoerr 'JobUtils: CMakeLists.txt was not found from the current file'
+    return
+  endif
+  call s:run('Make', 'make', l:root)
+endfunction
+
+function! jobutils#project#format_current() abort
+  if &filetype !=# 'c' && &filetype !=# 'cpp'
+    echoerr 'JobUtils: clang-format is available for C and C++ buffers only'
+    return
+  endif
+  if !executable('clang-format')
+    echoerr 'JobUtils: executable not found: clang-format'
+    return
+  endif
+  let l:output = system('clang-format', join(getline(1, '$'), "\n"))
+  if v:shell_error != 0
+    echoerr 'JobUtils: clang-format failed'
+    return
+  endif
+  let l:lines = split(l:output, '\n', 1)
+  call setline(1, l:lines)
+  if line('$') > len(l:lines)
+    execute (len(l:lines) + 1) . ',$delete _'
+  endif
+  echo 'JobUtils: clang-format completed'
+endfunction
+
+function! jobutils#project#open_compile_commands() abort
+  let l:root = jobutils#project#root()
+  if empty(l:root)
+    echoerr 'JobUtils: CMakeLists.txt was not found from the current file'
+    return
+  endif
+  for l:path in [l:root . '/compile_commands.json', s:build_directory(l:root) . '/compile_commands.json']
+    if filereadable(l:path)
+      execute 'edit ' . fnameescape(l:path)
+      return
+    endif
+  endfor
+  echoerr 'JobUtils: compile_commands.json was not found'
+endfunction
