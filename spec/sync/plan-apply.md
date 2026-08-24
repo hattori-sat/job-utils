@@ -17,6 +17,9 @@ JSON plan containing:
 
 Plan generation does not call an external write endpoint.
 
+The local `sync status` operation reports plan, base-snapshot, pending-action,
+and conflict counts from `.jobutils/` without contacting an external service.
+
 ## Apply
 
 `sync apply` verifies the source hash before executing actions. A stale plan is
@@ -27,6 +30,11 @@ never written.
 
 The adapter boundary supports a deterministic memory adapter for tests and an
 HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
+
+Classic Vim exposes the same workflow through `:GtdSyncPlan`,
+`:GtdSyncApply [plan]`, `:GtdSyncPull`, and `:GtdSyncStatus`. Apply and pull
+require interactive confirmation; omitting the apply path selects the newest
+local plan.
 
 ## Pull and conflicts
 

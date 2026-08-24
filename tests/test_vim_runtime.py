@@ -429,6 +429,189 @@ class VimRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
+    def test_sync_commands_are_available_with_lowercase_aliases(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        commands = (
+            "GtdSyncPlan",
+            "GtdSyncApply",
+            "GtdSyncPull",
+            "GtdSyncStatus",
+            "GtdSyncHelp",
+        )
+        command_check = " || ".join(
+            "exists(':{}') != 2".format(command) for command in commands
+        )
+        alias_check = " || ".join(
+            "g:jobutils_abbreviations !~# '{}'".format(alias)
+            for alias in (
+                "gtdsyncplan",
+                "gtdsyncapply",
+                "gtdsyncpull",
+                "gtdsyncstatus",
+                "gtdsynchelp",
+            )
+        )
+        checks = [
+            "+if {} | cquit 90 | endif".format(command_check),
+            "+let g:jobutils_abbreviations = execute('silent cabbrev')",
+            "+if {} | cquit 91 | endif".format(alias_check),
+        ]
+        result = subprocess.run(
+            [
+                vim,
+                "-Nu",
+                "NONE",
+                "-i",
+                "NONE",
+                "-n",
+                "-es",
+                "+set rtp^=" + str(vim_runtime),
+                "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
+            ]
+            + checks
+            + ["+qa!"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_sync_apply_cancellation_does_not_run_external_command(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            plans = root / ".jobutils" / "sync" / "plans"
+            plans.mkdir(parents=True)
+            (plans / "plan.json").write_text(
+                '{"plan_id": "plan-1", "created_at": "2026-08-25T10:00:00Z", "source_hash": "' + '0' * 64 + '", "actions": []}\n',
+                encoding="utf-8",
+            )
+            outside_plan = root.parent / (root.name + "-outside-plan.json")
+            outside_plan.write_text(
+                '{"plan_id": "outside", "actions": []}\n', encoding="utf-8"
+            )
+            messages = root / "messages.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
+                    "+let g:jobutils_sync_confirm='C'",
+                    "+edit " + str(root / "gtd.md"),
+                    "+GtdSyncApply .jobutils/sync/plans/plan.json",
+                    "+let g:jobutils_sync_confirm='A'",
+                    "+silent! GtdSyncApply " + str(outside_plan),
+                    "+if v:errmsg !~# 'no synchronization plan' | cquit 92 | endif",
+                    "+call writefile([execute('messages')], '" + str(messages) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("cancel", messages.read_text(encoding="utf-8").lower())
+
+    def test_sync_apply_without_path_uses_latest_status_plan(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            plans = root / ".jobutils" / "sync" / "plans"
+            plans.mkdir(parents=True)
+            (plans / "plan.json").write_text(
+                '{"plan_id": "plan-1", "created_at": "2026-08-25T10:00:00Z", "source_hash": "' + '0' * 64 + '", "actions": []}\n',
+                encoding="utf-8",
+            )
+            messages = root / "messages.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
+                    "+let g:jobutils_python='{}'".format(sys.executable),
+                    "+let g:jobutils_sync_confirm='C'",
+                    "+edit " + str(root / "gtd.md"),
+                    "+GtdSyncApply",
+                    "+call writefile([execute('messages')], '" + str(messages) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**__import__("os").environ, "PYTHONPATH": str(repository / "src")},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            message_text = messages.read_text(encoding="utf-8").lower()
+            self.assertNotIn("no synchronization plan", message_text)
+            self.assertIn("cancel", message_text)
+
+    def test_sync_plan_command_creates_reviewable_plan(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            documents = root / "documents"
+            documents.mkdir()
+            (documents / "guide.md").write_text(
+                "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+                encoding="utf-8",
+            )
+            result_file = root / "plans.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
+                    "+let g:jobutils_python='{}'".format(sys.executable),
+                    "+edit " + str(root / "gtd.md"),
+                    "+GtdSyncPlan",
+                    "+call writefile(glob('" + str(root / ".jobutils/sync/plans/*.json") + "', 0, 1), '" + str(result_file) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**__import__("os").environ, "PYTHONPATH": str(repository / "src")},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(len(result_file.read_text(encoding="utf-8").splitlines()), 1)
+
     def test_gtd_subtask_uses_current_task_as_parent(self):
         vim = shutil.which("vim")
         if vim is None:

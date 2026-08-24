@@ -103,6 +103,11 @@ Available commands include:
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
 - `:GtdMetricsHelp` — show metrics commands;
+- `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan;
+- `:GtdSyncApply [plan]` — apply the newest or named plan after confirmation;
+- `:GtdSyncPull` — pull external changes after confirmation;
+- `:GtdSyncStatus` — show local plans, bases, pending actions, and conflicts;
+- `:GtdSyncHelp` — show synchronization commands;
 - `:JobutilsProjectRoot` — show the nearest CMake project root.
 - `:JobutilsCMake` — open the nearest `CMakeLists.txt` in a split.
 
@@ -146,7 +151,16 @@ jobutils gtd document --repo /absolute/path/to/your-gtd-repository --line 8
 jobutils metrics catalog --repo /absolute/path/to/your-gtd-repository
 jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026-01-01 --to 2026-12-31
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
+jobutils sync status --repo /absolute/path/to/your-gtd-repository
 ```
+
+Synchronization is deliberately a two-step workflow. `sync plan` reads
+publishable Markdown and writes a JSON plan under
+`.jobutils/sync/plans/`. Review that file, then use `:GtdSyncApply` or
+`jobutils sync apply --plan PATH --adapter atlassian`. The Vim command uses
+the newest plan when no path is supplied and asks for confirmation before it
+writes to Jira or Confluence. `:GtdSyncPull` also asks for confirmation before
+writing pulled changes into local Markdown.
 
 Generated reports are placed under `.jobutils/output/<generation-date>/<period>/`
 and are ignored by Git. Metric event JSONL remains source data and should be

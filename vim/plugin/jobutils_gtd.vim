@@ -11,6 +11,11 @@ command! GtdTags call jobutils#gtd#catalog()
 command! GtdImpactLevels call jobutils#gtd#catalog()
 command! GtdMetricsHelp call jobutils#gtd#metrics_help()
 command! GtdReview call jobutils#gtd#review()
+command! GtdSyncPlan call jobutils#gtd#sync_plan()
+command! -nargs=? GtdSyncApply call jobutils#gtd#sync_apply(<q-args>)
+command! GtdSyncPull call jobutils#gtd#sync_pull()
+command! GtdSyncStatus call jobutils#gtd#sync_status()
+command! GtdSyncHelp call jobutils#gtd#sync_help()
 
 augroup jobutils_gtd_detail_links
   autocmd!
@@ -34,3 +39,13 @@ cnoreabbrev <expr> gtdmetricshelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdmetricshelp' ? 'GtdMetricsHelp' : 'gtdmetricshelp'
 cnoreabbrev <expr> gtdreview
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdreview' ? 'GtdReview' : 'gtdreview'
+cnoreabbrev <expr> gtdsyncplan
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncplan' ? 'GtdSyncPlan' : 'gtdsyncplan'
+cnoreabbrev <expr> gtdsyncapply
+      \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdsyncapply\%([[:space:]]\|$\)' ? 'GtdSyncApply' : 'gtdsyncapply'
+cnoreabbrev <expr> gtdsyncpull
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncpull' ? 'GtdSyncPull' : 'gtdsyncpull'
+cnoreabbrev <expr> gtdsyncstatus
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncstatus' ? 'GtdSyncStatus' : 'gtdsyncstatus'
+cnoreabbrev <expr> gtdsynchelp
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynchelp' ? 'GtdSyncHelp' : 'gtdsynchelp'

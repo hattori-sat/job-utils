@@ -1,3 +1,7 @@
+import contextlib
+import io
+import json
+import os
 import sys
 import tempfile
 import unittest
@@ -5,9 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
+from jobutils.cli import main
 from jobutils.markdown.normalize import markdown_to_storage, parse_document
 from jobutils.sync.adapters import MemoryAdapter
-from jobutils.sync.engine import SyncError, apply_plan, create_plan, pull
+from jobutils.sync.engine import SyncError, apply_plan, create_plan, pull, sync_status
 from jobutils.sync.references import externalize_references
 
 
@@ -165,6 +170,90 @@ Objective.
         payload = plan["actions"][0]["payload"]
         self.assertEqual(payload["progress_comment_field"], "customfield_12345")
         self.assertIn("2026-08-23", payload["progress_comment"])
+
+    def test_sync_status_reports_local_state(self):
+        plans = self.repo / ".jobutils" / "sync" / "plans"
+        bases = self.repo / ".jobutils" / "sync" / "bases"
+        plans.mkdir(parents=True)
+        bases.mkdir(parents=True)
+        action = {
+            "action_id": "action-1",
+            "action": "create",
+            "kind": "confluence",
+            "path": "documents/guide.md",
+            "external_id": None,
+            "payload": {
+                "title": "Guide",
+                "storage_body": "<h1>Guide</h1>",
+                "space_id": "space-1",
+                "space_key": "KB",
+                "version": 0,
+            },
+        }
+        (plans / "plan-1.json").write_text(
+            json.dumps(
+                {
+                    "plan_id": "plan-1",
+                    "created_at": "2026-08-25T10:00:00Z",
+                    "source_hash": "0" * 64,
+                    "actions": [action, dict(action, action_id="action-2")],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (plans / "plan-2.json").write_text(
+            json.dumps(
+                {
+                    "plan_id": "plan-2",
+                    "created_at": "2026-08-24T10:00:00Z",
+                    "source_hash": "1" * 64,
+                    "actions": [
+                        action,
+                        dict(action, action_id="action-2"),
+                        dict(action, action_id="action-3"),
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (plans / "plan-3.json").write_text(
+            '{"source_hash": "invalid", "actions": "not-a-list"}\n',
+            encoding="utf-8",
+        )
+        os.utime(plans / "plan-1.json", (100, 100))
+        os.utime(plans / "plan-2.json", (200, 200))
+        os.utime(plans / "plan-3.json", (300, 300))
+        (bases / "base-1.md").write_text("# Base\n", encoding="utf-8")
+        (self.repo / "documents" / "guide.md").write_text(
+            "---\nkind: document\n---\n\n<<<<<<< local\nLocal\n=======\nRemote\n>>>>>>> external\n",
+            encoding="utf-8",
+        )
+
+        expected = {
+            "base_count": 1,
+            "conflict_count": 1,
+            "latest_plan": ".jobutils/sync/plans/plan-2.json",
+            "pending_actions": 3,
+            "plan_count": 2,
+        }
+        self.assertEqual(sync_status(self.repo), expected)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(["sync", "status", "--repo", str(self.repo)]), 0)
+        self.assertEqual(json.loads(output.getvalue()), expected)
+
+    def test_apply_plan_rejects_paths_outside_managed_roots(self):
+        document = self.repo / "documents" / "guide.md"
+        document.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        plan["actions"][0]["path"] = "../outside.md"
+
+        with self.assertRaisesRegex(SyncError, "invalid structure"):
+            apply_plan(self.repo, plan, MemoryAdapter())
 
 
 if __name__ == "__main__":

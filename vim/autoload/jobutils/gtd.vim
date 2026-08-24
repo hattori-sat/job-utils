@@ -66,6 +66,54 @@ function! s:show_error(output, fallback) abort
   endfor
 endfunction
 
+function! s:show_output(output) abort
+  for l:line in split(a:output, '\n')
+    if !empty(l:line)
+      echom l:line
+    endif
+  endfor
+endfunction
+
+function! s:confirm_sync(prompt, accepted) abort
+  if exists('g:jobutils_sync_confirm')
+    let l:answer = g:jobutils_sync_confirm
+  else
+    let l:answer = input(a:prompt)
+  endif
+  return toupper(strpart(substitute(l:answer, '^\s*', '', ''), 0, 1)) ==# a:accepted
+endfunction
+
+function! s:sync_plan_path(root, requested) abort
+  let l:plan_root = resolve(fnamemodify(a:root . '/.jobutils/sync/plans', ':p'))
+  let l:plan_prefix = substitute(l:plan_root, '[\\/]\+$', '', '') . '/'
+  if !empty(a:requested)
+    let l:requested_path = filereadable(a:requested)
+          \ ? a:requested
+          \ : a:root . '/' . a:requested
+    if !filereadable(l:requested_path)
+      return ''
+    endif
+    let l:candidate = resolve(fnamemodify(l:requested_path, ':p'))
+    let l:left = substitute(l:candidate, '\\', '/', 'g')
+    let l:right = substitute(l:plan_prefix, '\\', '/', 'g')
+    if has('win32')
+      let l:left = tolower(l:left)
+      let l:right = tolower(l:right)
+    endif
+    return stridx(l:left, l:right) == 0 ? l:candidate : ''
+  endif
+  let l:status = s:run_cli('sync status')
+  if !l:status.ok
+    return ''
+  endif
+  let l:latest = matchstr(l:status.output, '"latest_plan"\s*:\s*"\zs[^"]*')
+  if empty(l:latest)
+    return ''
+  endif
+  let l:candidate = a:root . '/' . substitute(l:latest, '\\', '/', 'g')
+  return filereadable(l:candidate) ? resolve(fnamemodify(l:candidate, ':p')) : ''
+endfunction
+
 function! s:current_item_title() abort
   let l:line = getline('.')
   if l:line !~# '^\s*-\s*[A-Za-z0-9_-]\+:'
@@ -249,4 +297,73 @@ function! jobutils#gtd#review() abort
     endif
   endfor
   echo 'GTD: review displayed in :messages'
+endfunction
+
+function! jobutils#gtd#sync_plan() abort
+  let l:result = s:run_cli('sync plan')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync plan failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync plan created; review the JSON plan before applying it'
+endfunction
+
+function! jobutils#gtd#sync_apply(plan) abort
+  let l:root = s:repo_root()
+  if empty(l:root)
+    echoerr 'GTD: gtd.md was not found from the current file'
+    return
+  endif
+  let l:plan = s:sync_plan_path(l:root, a:plan)
+  if empty(l:plan)
+    echoerr 'GTD: no synchronization plan was found'
+    return
+  endif
+  let l:display_plan = substitute(strpart(l:plan, strlen(l:root) + 1), '\\', '/', 'g')
+  if !s:confirm_sync('Apply sync plan [' . l:display_plan . ']? (A)pply/(C)ancel: ', 'A')
+    echom 'GTD: sync apply cancelled'
+    return
+  endif
+  let l:result = s:run_cli(
+        \ 'sync apply --plan ' . shellescape(l:plan) . ' --adapter atlassian'
+        \ )
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync apply failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync apply completed'
+endfunction
+
+function! jobutils#gtd#sync_pull() abort
+  if !s:confirm_sync('Pull external changes? (Y)es/(N)o: ', 'Y')
+    echom 'GTD: sync pull cancelled'
+    return
+  endif
+  let l:result = s:run_cli('sync pull --adapter atlassian')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync pull failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync pull completed'
+endfunction
+
+function! jobutils#gtd#sync_status() abort
+  let l:result = s:run_cli('sync status')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync status failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync status displayed in :messages'
+endfunction
+
+function! jobutils#gtd#sync_help() abort
+  echo ':GtdSyncPlan              create a reviewable synchronization plan'
+  echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
+  echo ':GtdSyncPull              pull external changes after confirmation'
+  echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
+  echo ':GtdSyncHelp              show synchronization commands'
 endfunction
