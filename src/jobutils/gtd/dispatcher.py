@@ -1,6 +1,7 @@
 """Move GTD index items and maintain their linked task Markdown."""
 
 import os
+import json
 import re
 import tempfile
 import uuid
@@ -103,6 +104,44 @@ def _safe_link(repo_root: Path, link: str) -> Path:
             "linked detail path escapes the GTD repository: {}".format(link)
         )
     return candidate
+
+
+def _capture_event_exists(repo_root: Path, gtd_id: str) -> bool:
+    event_root = repo_root / ".jobutils" / "metrics" / "events"
+    for path in sorted(event_root.glob("*.jsonl")):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("event_type") == "captured" and event.get("gtd_id") == gtd_id:
+                return True
+    return False
+
+
+def _ensure_capture_event(
+    repo_root: Path, gtd_id: str, content: str, command: str
+) -> None:
+    if _capture_event_exists(repo_root, gtd_id):
+        return
+    lines = content.splitlines()
+    append_event(
+        repo_root,
+        "captured",
+        gtd_id,
+        source={
+            "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+            "command": command,
+        },
+        kind="task",
+        prefix=frontmatter.value(lines, "prefix"),
+        tags=frontmatter.list_value(lines, "tags"),
+        impact_level=frontmatter.value(lines, "impact_level"),
+    )
 
 
 def _task_template(
@@ -356,6 +395,11 @@ def create_task(
         path = _safe_link(repo_root, item.link)
         if not path.is_file():
             raise DispatchError("linked detail file is missing: {}".format(item.link))
+        content = path.read_text(encoding="utf-8")
+        task_id = frontmatter.value(content.splitlines(), "gtd_id")
+        if task_id is None:
+            raise DispatchError("unmanaged detail file: {}".format(item.link))
+        _ensure_capture_event(repo_root, task_id, content, "python:gtd task")
         return path
     if item.prefix == "done":
         raise DispatchError("create a detail before changing the item to done")
@@ -407,19 +451,7 @@ def create_task(
     new_lines[line_number - 1] = "- {}: {} <{}>".format(item.prefix, item.title, link)
     _atomic_write(path, content)
     _atomic_write(gtd_path, _render(new_lines))
-    append_event(
-        repo_root,
-        "captured",
-        task_id,
-        source={
-            "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
-            "command": "python:gtd task",
-        },
-        kind="task",
-        prefix=item.prefix,
-        tags=frontmatter.list_value(content.splitlines(), "tags"),
-        impact_level=frontmatter.value(content.splitlines(), "impact_level"),
-    )
+    _ensure_capture_event(repo_root, task_id, content, "python:gtd task")
     return path
 
 
@@ -488,6 +520,11 @@ def create_subtask(repo_root: Path, parent_path: str, line_number: int) -> Path:
         path = _safe_link(repo_root, existing_link)
         if not path.is_file():
             raise DispatchError("linked subtask file is missing: {}".format(existing_link))
+        content = path.read_text(encoding="utf-8")
+        task_id = frontmatter.value(content.splitlines(), "gtd_id")
+        if task_id is None:
+            raise DispatchError("unmanaged detail file: {}".format(existing_link))
+        _ensure_capture_event(repo_root, task_id, content, "python:gtd subtask")
         return path
 
     task_id = str(uuid.uuid4())
@@ -515,17 +552,5 @@ def create_subtask(repo_root: Path, parent_path: str, line_number: int) -> Path:
     path = _safe_link(repo_root, link)
     _atomic_write(path, content)
     _atomic_write(parent, _render(new_lines))
-    append_event(
-        repo_root,
-        "captured",
-        task_id,
-        source={
-            "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
-            "command": "python:gtd subtask",
-        },
-        kind="task",
-        prefix=prefix,
-        tags=frontmatter.list_value(content.splitlines(), "tags"),
-        impact_level=frontmatter.value(content.splitlines(), "impact_level"),
-    )
+    _ensure_capture_event(repo_root, task_id, content, "python:gtd subtask")
     return path

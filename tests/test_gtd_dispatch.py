@@ -116,6 +116,18 @@ title: 'Work'
         self.assertEqual(event["event_type"], "captured")
         self.assertEqual(event["kind"], "task")
 
+    def test_retry_repairs_a_missing_capture_event(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Recoverable work\n")
+        path = create_task(self.repo, 5)
+        event_file = next((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        event_file.unlink()
+
+        self.assertEqual(create_task(self.repo, 5), path)
+        repaired = next((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        event = json.loads(repaired.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(event["event_type"], "captured")
+        self.assertEqual(event["kind"], "task")
+
     def test_created_task_exposes_jira_identity_and_publish_fields(self):
         self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Publish me\n")
         path = create_task(self.repo, 5)

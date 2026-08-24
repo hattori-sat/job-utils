@@ -25,7 +25,9 @@ for collecting the current buffer context and presenting the result or error.
 Dispatch is a preflight-and-commit operation:
 
 1. Parse the current item, its source section, and its requested destination.
-2. Validate the destination and resolve or create the stable task identity.
+2. Validate the destination and resolve the stable task identity only for an
+   already-linked task; task identity creation is an explicit `GtdTask` or
+   `GtdSubtask` operation.
 3. Compute the resulting section counts from the proposed change.
 4. Reject the operation before writing when the resulting Focus count would be
    greater than three.
