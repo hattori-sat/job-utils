@@ -14,7 +14,7 @@ class SetupCliTests(unittest.TestCase):
             job_utils = temp / "job-utils"
             job_utils.mkdir()
             gtd_repo = temp / "GTDMD"
-            (gtd_repo / ".git").mkdir(parents=True)
+            subprocess.run(["git", "init", str(gtd_repo)], check=True, stdout=subprocess.PIPE)
             environment = os.environ.copy()
             environment["PYTHONPATH"] = str(root / "src")
             environment["HOME"] = str(temp / "home")

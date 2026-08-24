@@ -8,6 +8,12 @@ if [ ! -x "$JOB_UTILS_ROOT/.venv/bin/python" ]; then
   echo "jobutils-vim: run scripts/setup.sh first" >&2
   exit 1
 fi
+if [ -n "${PYTHONPATH:-}" ]; then
+  PYTHONPATH="$JOB_UTILS_ROOT/src:$PYTHONPATH"
+else
+  PYTHONPATH="$JOB_UTILS_ROOT/src"
+fi
+export PYTHONPATH
 if ! command -v vim >/dev/null 2>&1; then
   echo "jobutils-vim: Vim was not found" >&2
   exit 127

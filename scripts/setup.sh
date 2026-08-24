@@ -46,8 +46,17 @@ if [ ! -x "$VENV_PYTHON" ]; then
   "$PYTHON_COMMAND" -m venv "$VENV_ROOT"
 fi
 
-echo "job-utils setup: installing the local package"
-"$VENV_PYTHON" -m pip install --editable "$JOB_UTILS_ROOT"
+echo "job-utils setup: preparing the local Python environment"
+if [ ! -d "$JOB_UTILS_ROOT/src/jobutils" ]; then
+  echo "job-utils setup: source package was not found" >&2
+  exit 1
+fi
+if [ -n "${PYTHONPATH:-}" ]; then
+  PYTHONPATH="$JOB_UTILS_ROOT/src:$PYTHONPATH"
+else
+  PYTHONPATH="$JOB_UTILS_ROOT/src"
+fi
+export PYTHONPATH
 exec "$VENV_PYTHON" -m jobutils setup init \
   --job-utils-root "$JOB_UTILS_ROOT" \
   --platform "$SETUP_PLATFORM" \

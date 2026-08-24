@@ -8,6 +8,7 @@ import os
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from jobutils.setup_workflow import (
+    SetupError,
     ensure_env_file,
     ensure_shell_profile,
     ensure_vimrc_registration,
@@ -67,6 +68,17 @@ class SetupProfileTests(unittest.TestCase):
             self.assertIn(str(root / ".venv"), paths["jobutils"].read_text())
             self.assertIn(str(root / ".venv" / "bin" / "python"), paths["jobutils"].read_text())
             self.assertTrue(paths["jobutils"].stat().st_mode & 0o111)
+
+    def test_existing_unmanaged_wrapper_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            wrapper = bin_dir / "jobutils"
+            wrapper.write_text("#!/bin/sh\necho user-owned\n", encoding="utf-8")
+            with self.assertRaises(SetupError):
+                install_user_wrappers(root, bin_dir, "posix")
+            self.assertEqual(wrapper.read_text(encoding="utf-8"), "#!/bin/sh\necho user-owned\n")
 
     def test_windows_activation_uses_job_utils_virtual_environment(self):
         with tempfile.TemporaryDirectory() as directory:

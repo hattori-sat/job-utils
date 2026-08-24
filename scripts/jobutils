@@ -16,4 +16,8 @@ else
   echo "jobutils: Python 3 was not found" >&2
   exit 127
 fi
+if ! "$python_command" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+  echo "jobutils: Python 3.8 or newer is required" >&2
+  exit 1
+fi
 exec "$python_command" -m jobutils "$@"

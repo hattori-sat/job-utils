@@ -28,8 +28,8 @@ if (-not (Test-Path $venvPython)) {
   & $pythonCommand @pythonArguments -m venv $venvRoot
 }
 
-Write-Host "job-utils setup: installing the local package"
-& $venvPython -m pip install --editable $jobUtilsRoot
+Write-Host "job-utils setup: preparing the local Python environment"
+$env:PYTHONPATH = (Join-Path $jobUtilsRoot "src") + [IO.Path]::PathSeparator + $env:PYTHONPATH
 & $venvPython -m jobutils setup init `
   --job-utils-root $jobUtilsRoot `
   --platform windows `

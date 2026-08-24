@@ -86,7 +86,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             gtd_repo = args.gtd_repo
             if not gtd_repo:
-                gtd_repo = input("Enter the path to an existing empty Git Repository: ")
+                gtd_repo = input(
+                    "Enter the path to an existing local Git Repository directory: "
+                )
             result = run_setup(
                 Path(args.job_utils_root),
                 Path(gtd_repo),

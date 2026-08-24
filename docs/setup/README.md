@@ -21,8 +21,8 @@ On Windows PowerShell:
 .\scripts\setup.ps1
 ```
 
-The script creates or reuses `job-utils/.venv`, installs this checkout into
-that environment, and asks for the path to an existing local Git repository
+The script creates or reuses `job-utils/.venv`, connects it to this checkout's
+source tree, and asks for the path to an existing local Git repository
 for the GTD Markdown data. The directory must already exist and contain
 `.git`; an empty repository with a README is valid. A missing path or a
 non-Git path stops before any GTD file is created.

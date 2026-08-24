@@ -7,39 +7,27 @@ from pathlib import Path
 
 
 class InstallTests(unittest.TestCase):
-    def test_editable_install_works_with_bundled_python_tooling(self):
-        """A fresh host can install the checkout without downloading build tools."""
+    def test_venv_runs_checkout_without_downloading_build_tools(self):
+        """A fresh venv can run the checkout without a package installation."""
 
         root = Path(__file__).parents[1]
         with tempfile.TemporaryDirectory() as directory:
             environment = Path(directory) / "venv"
-            venv.EnvBuilder(with_pip=True).create(environment)
+            venv.EnvBuilder(with_pip=False).create(environment)
             executable = (
                 environment / "Scripts" / "python.exe"
                 if os.name == "nt"
                 else environment / "bin" / "python"
             )
-            install = subprocess.run(
-                [
-                    str(executable),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--no-deps",
-                    "--editable",
-                    str(root),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            self.assertEqual(install.returncode, 0, install.stdout)
+            environment_variables = os.environ.copy()
+            environment_variables["PYTHONPATH"] = str(root / "src")
             result = subprocess.run(
                 [str(executable), "-m", "jobutils", "--help"],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=environment_variables,
             )
             self.assertIn("usage:", result.stdout)
             profile = Path(directory) / "config.yaml"
@@ -77,6 +65,7 @@ confluence:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=environment_variables,
             )
             self.assertIn("config valid:", config.stdout)
 

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import json
+import subprocess
 from pathlib import Path
 
 import sys
@@ -17,6 +18,14 @@ from jobutils.setup_workflow import (
 
 
 class SetupWorkflowTests(unittest.TestCase):
+    def _init_git(self, path):
+        subprocess.run(
+            ["git", "init", str(path)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
     def test_detect_platform_accepts_supported_systems(self):
         self.assertEqual(detect_platform("Darwin"), "macos")
         self.assertEqual(detect_platform("Linux", distribution="Ubuntu"), "ubuntu")
@@ -33,11 +42,15 @@ class SetupWorkflowTests(unittest.TestCase):
                 validate_gtd_repository(root / "missing")
             with self.assertRaises(SetupError):
                 validate_gtd_repository(root)
+            fake = root / "fake"
+            (fake / ".git").mkdir(parents=True)
+            with self.assertRaises(SetupError):
+                validate_gtd_repository(fake)
 
     def test_bootstrap_preserves_existing_files_and_creates_missing_items(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
-            (repo / ".git").mkdir()
+            self._init_git(repo)
             (repo / "gtd.md").write_text("# My GTD\n", encoding="utf-8")
             bootstrap_gtd_repository(repo)
             self.assertEqual(
@@ -47,6 +60,13 @@ class SetupWorkflowTests(unittest.TestCase):
             self.assertTrue((repo / "gtd_tasks").is_dir())
             self.assertTrue((repo / "documents").is_dir())
             self.assertTrue((repo / ".jobutils").is_dir())
+            ignored = subprocess.run(
+                ["git", "-C", str(repo), "check-ignore", ".jobutils/output/report.html"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(ignored.returncode, 0, ignored.stderr)
 
     def test_setup_records_state_and_redacted_log(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -56,7 +76,7 @@ class SetupWorkflowTests(unittest.TestCase):
                 "JIRA_API_TOKEN=\n", encoding="utf-8"
             )
             repo = Path(directory) / "gtd"
-            (repo / ".git").mkdir(parents=True)
+            self._init_git(repo)
             result = run_setup(
                 root,
                 repo,
@@ -76,7 +96,7 @@ class SetupWorkflowTests(unittest.TestCase):
             root = Path(directory) / "job-utils"
             root.mkdir()
             repo = Path(directory) / "gtd"
-            (repo / ".git").mkdir(parents=True)
+            self._init_git(repo)
             with self.assertRaises(SetupError):
                 run_setup(
                     root,
