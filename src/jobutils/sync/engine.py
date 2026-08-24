@@ -159,7 +159,12 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
     for path in plan_paths:
         try:
             plan = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(plan, dict):
+            if (
+                isinstance(plan, dict)
+                and isinstance(plan.get("actions"), list)
+                and isinstance(plan.get("source_hash"), str)
+                and bool(plan.get("source_hash"))
+            ):
                 plan_records.append((path, plan))
         except (OSError, ValueError):
             continue

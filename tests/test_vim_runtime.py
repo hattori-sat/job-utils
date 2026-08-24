@@ -492,7 +492,8 @@ class VimRuntimeTests(unittest.TestCase):
             plans = root / ".jobutils" / "sync" / "plans"
             plans.mkdir(parents=True)
             (plans / "plan.json").write_text(
-                '{"plan_id": "plan-1", "actions": []}\n', encoding="utf-8"
+                '{"plan_id": "plan-1", "source_hash": "hash", "actions": []}\n',
+                encoding="utf-8",
             )
             outside_plan = root.parent / (root.name + "-outside-plan.json")
             outside_plan.write_text(
@@ -538,7 +539,8 @@ class VimRuntimeTests(unittest.TestCase):
             plans = root / ".jobutils" / "sync" / "plans"
             plans.mkdir(parents=True)
             (plans / "plan.json").write_text(
-                '{"plan_id": "plan-1", "actions": []}\n', encoding="utf-8"
+                '{"plan_id": "plan-1", "source_hash": "hash", "actions": []}\n',
+                encoding="utf-8",
             )
             messages = root / "messages.txt"
             result = subprocess.run(

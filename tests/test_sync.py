@@ -177,14 +177,29 @@ Objective.
         plans.mkdir(parents=True)
         bases.mkdir(parents=True)
         (plans / "plan-1.json").write_text(
-            json.dumps({"created_at": "2026-08-25T10:00:00Z", "actions": [{}, {}]}),
+            json.dumps(
+                {
+                    "created_at": "2026-08-25T10:00:00Z",
+                    "source_hash": "hash-1",
+                    "actions": [{}, {}],
+                }
+            ),
             encoding="utf-8",
         )
         (plans / "plan-2.json").write_text(
-            json.dumps({"created_at": "2026-08-24T10:00:00Z", "actions": [{}, {}, {}]}),
+            json.dumps(
+                {
+                    "created_at": "2026-08-24T10:00:00Z",
+                    "source_hash": "hash-2",
+                    "actions": [{}, {}, {}],
+                }
+            ),
             encoding="utf-8",
         )
-        (plans / "plan-3.json").write_text("[]\n", encoding="utf-8")
+        (plans / "plan-3.json").write_text(
+            '{"source_hash": "invalid", "actions": "not-a-list"}\n',
+            encoding="utf-8",
+        )
         os.utime(plans / "plan-1.json", (100, 100))
         os.utime(plans / "plan-2.json", (200, 200))
         os.utime(plans / "plan-3.json", (300, 300))
