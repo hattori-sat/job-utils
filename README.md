@@ -11,9 +11,7 @@ document pages, and `.jobutils/` runtime data.
 
 - [Requirements](docs/requirements/overview.md)
 - [Document map](docs/design/document-map.md)
-- [Implementation status](docs/design/implementation-status.md)
 - [Implementation roadmap](docs/design/implementation-roadmap.md)
-- [Jira publishing use case](docs/design/jira-publishing-use-case.md)
 - [Research notes](docs/research/)
 - [Specifications](spec/)
 - [Agent guidance](docs/agent/project-guidance.md)
