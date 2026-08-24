@@ -50,6 +50,8 @@ class SetupProfileTests(unittest.TestCase):
             ensure_shell_profile(profile, root / ".local" / "bin", "posix")
             first_vimrc = vimrc.read_text(encoding="utf-8")
             first_profile = profile.read_text(encoding="utf-8")
+            self.assertIn('" >>> job-utils setup >>>', first_vimrc)
+            self.assertNotIn("# >>> job-utils setup >>>", first_vimrc)
             ensure_vimrc_registration(
                 vimrc, snippet, "/opt/job-utils/.venv/bin/python"
             )
