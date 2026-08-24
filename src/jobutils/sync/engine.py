@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -159,12 +160,7 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
     for path in plan_paths:
         try:
             plan = json.loads(path.read_text(encoding="utf-8"))
-            if (
-                isinstance(plan, dict)
-                and isinstance(plan.get("actions"), list)
-                and isinstance(plan.get("source_hash"), str)
-                and bool(plan.get("source_hash"))
-            ):
+            if _is_valid_plan(plan):
                 plan_records.append((path, plan))
         except (OSError, ValueError):
             continue
@@ -194,6 +190,39 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
         "pending_actions": pending_actions,
         "plan_count": len(plan_records),
     }
+
+
+def _is_valid_plan(plan: object) -> bool:
+    """Return whether a saved plan has the structure required for apply."""
+
+    if not isinstance(plan, dict):
+        return False
+    if not isinstance(plan.get("plan_id"), str) or not plan["plan_id"]:
+        return False
+    if not isinstance(plan.get("created_at"), str) or not plan["created_at"]:
+        return False
+    source_hash = plan.get("source_hash")
+    if not isinstance(source_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", source_hash):
+        return False
+    actions = plan.get("actions")
+    if not isinstance(actions, list):
+        return False
+    for action in actions:
+        if not isinstance(action, dict):
+            return False
+        if not isinstance(action.get("action_id"), str) or not action["action_id"]:
+            return False
+        if action.get("action") not in ("create", "update"):
+            return False
+        if action.get("kind") not in ("jira", "confluence"):
+            return False
+        if not isinstance(action.get("path"), str) or not action["path"]:
+            return False
+        if not isinstance(action.get("payload"), dict):
+            return False
+        if action["action"] == "update" and not action.get("external_id"):
+            return False
+    return True
 
 
 def _set_external(path: Path, kind: str, result: Dict) -> None:

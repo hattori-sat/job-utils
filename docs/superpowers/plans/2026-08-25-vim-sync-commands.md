@@ -120,7 +120,7 @@ Confirm that no `.env`, `config.yaml`, private GTD repository data, Atlassian UR
 
 - [x] **Step 4: Mark completed steps and commit the plan update**
 
-Verified on 2026-08-25: the full suite completed with 67 passing tests and `git diff --check` was clean. The public diff contains no credentials, local configuration, private GTD data, or generated output.
+Verified on 2026-08-25: the full suite completed with 68 passing tests and `git diff --check` was clean. The public diff contains no credentials, local configuration, private GTD data, or generated output.
 
 ## Self-review checklist
 

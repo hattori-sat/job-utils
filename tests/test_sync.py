@@ -176,12 +176,21 @@ Objective.
         bases = self.repo / ".jobutils" / "sync" / "bases"
         plans.mkdir(parents=True)
         bases.mkdir(parents=True)
+        action = {
+            "action_id": "action-1",
+            "action": "create",
+            "kind": "confluence",
+            "path": "documents/guide.md",
+            "external_id": None,
+            "payload": {},
+        }
         (plans / "plan-1.json").write_text(
             json.dumps(
                 {
+                    "plan_id": "plan-1",
                     "created_at": "2026-08-25T10:00:00Z",
-                    "source_hash": "hash-1",
-                    "actions": [{}, {}],
+                    "source_hash": "0" * 64,
+                    "actions": [action, dict(action, action_id="action-2")],
                 }
             ),
             encoding="utf-8",
@@ -189,9 +198,14 @@ Objective.
         (plans / "plan-2.json").write_text(
             json.dumps(
                 {
+                    "plan_id": "plan-2",
                     "created_at": "2026-08-24T10:00:00Z",
-                    "source_hash": "hash-2",
-                    "actions": [{}, {}, {}],
+                    "source_hash": "1" * 64,
+                    "actions": [
+                        action,
+                        dict(action, action_id="action-2"),
+                        dict(action, action_id="action-3"),
+                    ],
                 }
             ),
             encoding="utf-8",
