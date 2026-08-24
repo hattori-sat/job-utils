@@ -38,10 +38,23 @@ function! s:run(title, command, directory) abort
     return
   endif
   let l:previous_directory = getcwd()
-  execute 'noautocmd keepjumps lcd ' . fnameescape(a:directory)
-  let l:output = system(a:command . ' 2>&1')
-  let l:exit_code = v:shell_error
-  execute 'noautocmd keepjumps lcd ' . fnameescape(l:previous_directory)
+  let l:previous_scope = haslocaldir()
+  let l:output = ''
+  let l:exit_code = 1
+  try
+    execute 'noautocmd keepjumps lcd ' . fnameescape(a:directory)
+    let l:output = system(a:command . ' 2>&1')
+    let l:exit_code = v:shell_error
+  finally
+    " :cd clears any temporary window/tab-local scope before restoring the
+    " scope that was active when the command started.
+    execute 'noautocmd keepjumps cd ' . fnameescape(l:previous_directory)
+    if l:previous_scope == 1
+      execute 'noautocmd keepjumps lcd ' . fnameescape(l:previous_directory)
+    elseif l:previous_scope == 2
+      execute 'noautocmd keepjumps tcd ' . fnameescape(l:previous_directory)
+    endif
+  endtry
   let l:lines = split(l:output, '\n', 1)
   call setqflist([], 'r', {'title': a:title, 'lines': l:lines})
   if !empty(l:lines)
