@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.gtd import DispatchError, create_task, dispatch
+from jobutils.gtd import DispatchError, create_subtask, create_task, dispatch
 
 
 class GtdDispatchTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class GtdDispatchTests(unittest.TestCase):
     def write_gtd(self, content):
         (self.repo / "gtd.md").write_text(content, encoding="utf-8")
 
-    def test_dispatch_creates_uuid_detail_and_preserves_sections(self):
+    def test_dispatch_moves_items_without_creating_task_details(self):
         self.write_gtd(
             """# GTD
 
@@ -35,18 +35,13 @@ class GtdDispatchTests(unittest.TestCase):
         )
         result = dispatch(self.repo)
         self.assertEqual(result.moved, 1)
+        self.assertEqual(result.created, [])
+        self.assertEqual(result.event_count, 0)
         gtd = (self.repo / "gtd.md").read_text(encoding="utf-8")
         self.assertIn("## Focus", gtd)
         self.assertNotIn("## Today\n\n- focus:", gtd)
-        details = list((self.repo / "gtd_tasks").glob("*.md"))
-        self.assertEqual(len(details), 1)
-        detail = details[0].read_text(encoding="utf-8")
-        self.assertIn("kind: 'task'", detail)
-        self.assertIn("prefix: 'focus'", detail)
-        self.assertIn("# Implementation Note", detail)
-        self.assertNotIn("gtd_file:", detail)
-        self.assertNotIn("publish_jira:", detail)
-        self.assertNotIn("publish_confluence:", detail)
+        self.assertIn("- focus: Read the design", gtd)
+        self.assertFalse((self.repo / "gtd_tasks").exists())
 
     def test_focus_overflow_is_atomic(self):
         lines = ["# GTD", "", "## Focus", ""]
@@ -65,8 +60,7 @@ class GtdDispatchTests(unittest.TestCase):
         self.assertEqual(result.moved, 1)
         gtd = (self.repo / "gtd.md").read_text(encoding="utf-8")
         self.assertIn("## Inbox\n\n- inbox: return to inbox", gtd)
-        detail = next((self.repo / "gtd_tasks").glob("*.md"))
-        self.assertIn("prefix: 'inbox'", detail.read_text(encoding="utf-8"))
+        self.assertFalse((self.repo / "gtd_tasks").exists())
 
     def test_arbitrary_transition_updates_detail_and_event(self):
         self.write_gtd("# GTD\n\n## Today\n\n- focus: Work <gtd_tasks/task.md>\n")
@@ -102,6 +96,103 @@ title: 'Work'
         self.assertTrue(path.is_file())
         second = create_task(self.repo, 5)
         self.assertEqual(path, second)
+
+    def test_dispatch_does_not_capture_unlinked_item(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: New work\n")
+        result = dispatch(self.repo)
+        self.assertEqual(result.event_count, 0)
+        self.assertFalse((self.repo / ".jobutils/metrics/events").exists())
+
+    def test_create_task_is_explicit_markdown_creation_boundary(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: New work\n")
+        path = create_task(self.repo, 5)
+        self.assertTrue(path.is_file())
+        self.assertIn(
+            str(path.relative_to(self.repo.resolve())).replace("\\", "/"),
+            (self.repo / "gtd.md").read_text(encoding="utf-8"),
+        )
+        event_file = next((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        event = json.loads(event_file.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(event["event_type"], "captured")
+        self.assertEqual(event["kind"], "task")
+
+    def test_created_task_exposes_jira_identity_and_publish_fields(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Publish me\n")
+        path = create_task(self.repo, 5)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("publish_jira: false", text)
+        self.assertIn("jira_issue_type: 'Task'", text)
+        self.assertIn("jira_parent_key: null", text)
+        self.assertIn("jira_key: null", text)
+        self.assertIn("jira_url: null", text)
+
+    def test_create_subtask_under_parent_directory_and_links_jira_parent(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Child work\n")
+        parent = self.repo / "gtd_tasks" / "parent.md"
+        parent.parent.mkdir()
+        parent.write_text(
+            "---\ngtd_id: 'parent-1'\njira_key: 'DEMO-1'\n---\n\n# Parent\n",
+            encoding="utf-8",
+        )
+        child = create_task(self.repo, 5, parent_path="gtd_tasks/parent.md")
+        self.assertEqual(child.parent, parent.with_suffix("").resolve())
+        child_text = child.read_text(encoding="utf-8")
+        self.assertIn("parent_gtd_id: 'parent-1'", child_text)
+        self.assertIn("jira_parent_key: 'DEMO-1'", child_text)
+        self.assertEqual(child_text.count("jira_parent_key:"), 1)
+        self.assertIn(
+            str(child.relative_to(self.repo.resolve())).replace("\\", "/"),
+            (self.repo / "gtd.md").read_text(encoding="utf-8"),
+        )
+
+    def test_create_subtask_from_parent_markdown_section(self):
+        parent = self.repo / "gtd_tasks" / "parent.md"
+        parent.parent.mkdir()
+        parent.write_text(
+            """---
+gtd_id: 'parent-1'
+jira_key: 'DEMO-1'
+jira_project: 'DEMO'
+publish_jira: true
+prefix: 'today'
+---
+
+# Parent
+
+# Subtasks
+
+- next: Child from parent
+
+# Implementation Note
+
+private
+""",
+            encoding="utf-8",
+        )
+        child = create_subtask(self.repo, "gtd_tasks/parent.md", 13)
+        child_text = child.read_text(encoding="utf-8")
+        parent_text = parent.read_text(encoding="utf-8")
+        self.assertEqual(child.parent, parent.with_suffix("").resolve())
+        self.assertIn("parent_gtd_id: 'parent-1'", child_text)
+        self.assertIn("jira_parent_key: 'DEMO-1'", child_text)
+        self.assertIn("jira_issue_type: 'Sub-task'", child_text)
+        self.assertIn("jira_project: 'DEMO'", child_text)
+        self.assertIn("publish_jira: true", child_text)
+        self.assertIn(
+            "- next: Child from parent <{}>".format(
+                str(child.relative_to(self.repo.resolve())).replace("\\", "/")
+            ),
+            parent_text,
+        )
+
+    def test_create_subtask_requires_the_subtasks_section(self):
+        parent = self.repo / "gtd_tasks" / "parent.md"
+        parent.parent.mkdir()
+        parent.write_text(
+            "---\ngtd_id: 'parent-1'\n---\n\n# Parent\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(DispatchError, "Subtasks"):
+            create_subtask(self.repo, "gtd_tasks/parent.md", 6)
 
 
 if __name__ == "__main__":

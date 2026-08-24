@@ -46,15 +46,19 @@ but the Vim failure line remains stable for scripts and muscle memory.
 
 ## Identity and linked Markdown
 
-When a known non-`done` item has no detail link, the first successful dispatch
-creates one task Markdown file below `gtd_tasks/`, assigns a UUID, and replaces
-the index line with the generated link. Existing links and UUIDs are reused.
-An unlinked `done` item is invalid and is not auto-created; this preserves the
-safety rule that completed work must have a detail record before it is closed.
+Dispatch does not create task Markdown. A known item without a detail link is
+moved as an unlinked item. The explicit Vim `:GtdTask` command or Python
+`gtd task` operation creates one task Markdown file below `gtd_tasks/`, assigns
+a UUID, and replaces only the selected index line with the generated link.
+Existing links and UUIDs are reused. An unlinked `done` item is invalid and is
+not auto-created; this preserves the safety rule that completed work must have
+a detail record before it is closed.
 
 ## Observability
 
-Every successful prefix change produces a metric event containing the previous
-and new prefixes. A failed dispatch produces an error event without changing
-the task state. `wait` starts waiting-time accounting; `cal` records scheduled
-intent and does not start waiting-time accounting.
+Every successful prefix change on a linked task produces a metric event
+containing the previous and new prefixes. Creating a task through `:GtdTask` or
+`gtd task` produces its capture event. Moving an unlinked item does not create a
+task identity or metric event. A failed dispatch produces an error event
+without changing the task state. `wait` starts waiting-time accounting; `cal`
+records scheduled intent and does not start waiting-time accounting.

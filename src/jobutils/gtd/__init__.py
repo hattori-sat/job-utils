@@ -1,6 +1,12 @@
 """GTD Markdown parsing and dispatch."""
 
-from .dispatcher import DispatchError, DispatchResult, create_task, dispatch
+from .dispatcher import (
+    DispatchError,
+    DispatchResult,
+    create_subtask,
+    create_task,
+    dispatch,
+)
 from .documents import DocumentError, create_document
 
 __all__ = [
@@ -8,6 +14,7 @@ __all__ = [
     "DispatchResult",
     "DocumentError",
     "create_document",
+    "create_subtask",
     "create_task",
     "dispatch",
 ]

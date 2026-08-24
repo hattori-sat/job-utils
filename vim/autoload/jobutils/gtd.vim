@@ -35,6 +35,17 @@ function! s:run(args) abort
   return {'ok': v:shell_error == 0, 'output': l:output}
 endfunction
 
+function! s:run_cli(args) abort
+  let l:root = s:repo_root()
+  if empty(l:root)
+    return {'ok': 0, 'output': 'GTD: gtd.md was not found from the current file'}
+  endif
+  let l:command = shellescape(s:python_command()) . ' -m jobutils ' . a:args
+        \ . ' --repo ' . shellescape(l:root)
+  let l:output = system(l:command)
+  return {'ok': v:shell_error == 0, 'output': l:output}
+endfunction
+
 function! s:run_metrics(args) abort
   let l:root = s:repo_root()
   if empty(l:root)
@@ -112,6 +123,60 @@ function! jobutils#gtd#task() abort
   execute 'hide edit ' . fnameescape(l:path)
 endfunction
 
+function! s:current_task_path() abort
+  let l:root = resolve(s:repo_root())
+  let l:current = resolve(expand('%:p'))
+  if empty(l:root) || empty(l:current)
+    return ''
+  endif
+  let l:root = substitute(l:root, '/$', '', '')
+  let l:task_prefix = l:root . '/gtd_tasks/'
+  if stridx(l:current, l:task_prefix) != 0
+    return ''
+  endif
+  return substitute(strpart(l:current, strlen(l:root) + 1), '\\', '/', 'g')
+endfunction
+
+function! s:in_subtasks_section() abort
+  let l:inside = 0
+  for l:index in range(1, line('.'))
+    let l:heading = getline(l:index)
+    if l:heading =~# '^#\s\+Subtasks\s*$'
+      let l:inside = 1
+    elseif l:heading =~# '^#\s\+' && l:inside
+      let l:inside = 0
+    endif
+  endfor
+  return l:inside
+endfunction
+
+function! jobutils#gtd#subtask() abort
+  let l:parent = s:current_task_path()
+  if empty(l:parent)
+    echoerr 'GTD: subtask must be created from a task Markdown file'
+    return
+  endif
+  if !s:in_subtasks_section()
+    echoerr 'GTD: place the cursor under the # Subtasks heading'
+    return
+  endif
+  update
+  let l:line = line('.')
+  let l:result = s:run_cli(
+        \ 'gtd subtask --line ' . l:line . ' --parent ' . shellescape(l:parent)
+        \ )
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: subtask failed')
+    return
+  endif
+  let l:path = substitute(split(l:result.output, '\n')[0], '\n\+$', '', '')
+  if empty(l:path) || !filereadable(l:path)
+    echoerr 'GTD: subtask path was not returned'
+    return
+  endif
+  call s:reload_current_buffer()
+  execute 'hide edit ' . fnameescape(l:path)
+endfunction
 function! jobutils#gtd#document() abort
   update
   let l:root = s:document_root()

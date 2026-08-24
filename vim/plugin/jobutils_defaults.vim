@@ -9,7 +9,6 @@ if get(g:, 'jobutils_enable_filetype_defaults', 1)
   filetype plugin indent on
   syntax enable
 endif
-
 if get(g:, 'jobutils_enable_defaults', 1)
   set number
   set cursorline
@@ -36,14 +35,18 @@ if get(g:, 'jobutils_enable_defaults', 1)
   endif
 endif
 
-augroup jobutils_filetype_defaults
-  autocmd!
-  autocmd FileType markdown setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
-  autocmd FileType json,xml setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
-  autocmd FileType c,cpp,cmake setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
-  " Make recipes require literal tab characters; never expand them here.
-  autocmd FileType make setlocal noexpandtab tabstop=8 softtabstop=0 shiftwidth=8
-augroup END
-
+if get(g:, 'jobutils_enable_filetype_defaults', 1)
+  augroup jobutils_filetype_defaults
+    autocmd!
+    autocmd FileType markdown setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
+          \ formatoptions+=croln
+          \ comments=b:*,b:-,b:+,n:>
+    autocmd FileType markdown let &l:formatlistpat = '^\s*\%([0-9]\+\.\|[-*+]\)\s\+'
+    autocmd FileType json,xml setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
+    autocmd FileType c,cpp,cmake setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
+    " Make recipes require literal tab characters; never expand them here.
+    autocmd FileType make setlocal noexpandtab tabstop=8 softtabstop=0 shiftwidth=8
+  augroup END
+endif
 command! JobutilsCMake call jobutils#project#open_cmake()
 command! JobutilsProjectRoot call jobutils#project#show_root()

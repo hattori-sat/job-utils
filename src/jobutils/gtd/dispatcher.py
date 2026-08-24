@@ -9,11 +9,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from jobutils.metrics.events import append_state_change
+from jobutils.metrics.events import append_event, append_state_change
 
 from . import frontmatter
 from .model import PREFIXES, SECTIONS, STATUSES, TaskItem
 from .parser import SECTION_RE, scan_items, split_title_link
+
+
+SUBTASK_ITEM_RE = re.compile(
+    r"^\s*-\s*(?:(?P<prefix>[A-Za-z0-9_-]+):\s*)?(?P<body>.*?)\s*$"
+)
 
 
 class DispatchError(Exception):
@@ -100,10 +105,21 @@ def _safe_link(repo_root: Path, link: str) -> Path:
     return candidate
 
 
-def _task_template(prefix: str, title: str, task_id: str) -> str:
+def _task_template(
+    prefix: str,
+    title: str,
+    task_id: str,
+    parent_gtd_id: Optional[str] = None,
+    jira_parent_key: Optional[str] = None,
+    jira_project: Optional[str] = None,
+    jira_issue_type: str = "Task",
+    publish_jira: bool = False,
+) -> str:
     """Build the compact task document created by the first GTD dispatch."""
 
     today = date.today().isoformat()
+    parent_value = frontmatter.quote(parent_gtd_id) if parent_gtd_id else "null"
+    jira_parent_value = frontmatter.quote(jira_parent_key) if jira_parent_key else "null"
     lines = [
         "---",
         "gtd_id: {}".format(frontmatter.quote(task_id)),
@@ -116,6 +132,16 @@ def _task_template(prefix: str, title: str, task_id: str) -> str:
         "tags: []",
         "impact_level: null",
         "estimate_minutes: null",
+        "parent_gtd_id: {}".format(parent_value),
+        "publish_jira: {}".format("true" if publish_jira else "false"),
+        "jira_project: {}".format(
+            frontmatter.quote(jira_project) if jira_project else "null"
+        ),
+        "jira_issue_type: {}".format(frontmatter.quote(jira_issue_type)),
+        "jira_parent_key: {}".format(jira_parent_value),
+        "jira_progress_comment_field: null",
+        "jira_key: null",
+        "jira_url: null",
         "---",
         "",
         "# Summary",
@@ -127,6 +153,10 @@ def _task_template(prefix: str, title: str, task_id: str) -> str:
         "",
         "",
         "# Progress Comment",
+        "",
+        "",
+        "",
+        "# Subtasks",
         "",
         "",
         "",
@@ -238,10 +268,8 @@ def dispatch(
 
     buckets: Dict[str, List[str]] = {prefix: [] for prefix in PREFIXES}
     delete_indices = {item.line_index for item in items}
-    detail_writes: List[Tuple[Path, str]] = []
     detail_updates: List[Tuple[Path, TaskItem]] = []
     events: List[Tuple[str, str, str, List[str], Optional[str]]] = []
-    created: List[Path] = []
 
     for item in items:
         link = item.link
@@ -259,18 +287,11 @@ def dispatch(
         else:
             if item.prefix == "done":
                 raise DispatchError("create a detail before changing the item to done")
-            task_id = str(uuid.uuid4())
-            task_id_for_event = task_id
-            link = "gtd_tasks/{}.md".format(task_id)
-            detail_path = _safe_link(repo_root, link)
-            detail_content = _task_template(item.prefix, item.title, task_id)
-            detail_writes.append((detail_path, detail_content))
-            task_lines = detail_content.splitlines()
-            created.append(detail_path)
 
-        buckets[item.prefix].append(
-            "- {}: {} <{}>".format(item.prefix, item.title, link)
-        )
+        rendered = "- {}: {}".format(item.prefix, item.title)
+        if link:
+            rendered += " <{}>".format(link)
+        buckets[item.prefix].append(rendered)
         if item.source_prefix != item.prefix:
             if task_id_for_event:
                 events.append(
@@ -293,8 +314,6 @@ def dispatch(
     new_content = _render(new_lines)
     if new_content != old_content:
         _atomic_write(gtd_path, new_content)
-    for path, content in detail_writes:
-        _atomic_write(path, content)
     for path, item in detail_updates:
         _update_detail(path, item)
     event_count = 0
@@ -310,11 +329,14 @@ def dispatch(
             impact_level=impact_level,
         )
         event_count += 1
-    return DispatchResult(gtd_path, len(items), created, event_count)
+    return DispatchResult(gtd_path, len(items), [], event_count)
 
 
 def create_task(
-    repo_root: Path, line_number: int, gtd_path: Optional[Path] = None
+    repo_root: Path,
+    line_number: int,
+    gtd_path: Optional[Path] = None,
+    parent_path: Optional[str] = None,
 ) -> Path:
     """Create or return the task document linked from a GTD line."""
 
@@ -340,11 +362,170 @@ def create_task(
     if not item.title:
         raise DispatchError("task title cannot be empty")
     task_id = str(uuid.uuid4())
-    link = "gtd_tasks/{}.md".format(task_id)
+    parent_lines: List[str] = []
+    parent_gtd_id = None
+    jira_parent_key = None
+    jira_project = None
+    jira_issue_type = "Task"
+    publish_jira = False
+    if parent_path:
+        parent = _safe_link(repo_root, parent_path)
+        if not parent.is_file():
+            raise DispatchError("parent task file is missing: {}".format(parent_path))
+        if parent.relative_to(repo_root).parts[0] != "gtd_tasks":
+            raise DispatchError(
+                "parent task must be under gtd_tasks: {}".format(parent_path)
+            )
+        parent_lines = parent.read_text(encoding="utf-8").splitlines()
+        parent_gtd_id = frontmatter.value(parent_lines, "gtd_id")
+        if parent_gtd_id is None:
+            raise DispatchError("parent task is missing gtd_id: {}".format(parent_path))
+        jira_parent_key = frontmatter.value(parent_lines, "jira_key")
+        jira_project = frontmatter.value(parent_lines, "jira_project")
+        publish_jira = (
+            (frontmatter.value(parent_lines, "publish_jira") or "").lower() == "true"
+            and bool(jira_parent_key)
+        )
+        jira_issue_type = "Sub-task"
+        link = str((parent.with_suffix("") / (task_id + ".md")).relative_to(repo_root)).replace(
+            "\\", "/"
+        )
+    else:
+        link = "gtd_tasks/{}.md".format(task_id)
     path = _safe_link(repo_root, link)
-    content = _task_template(item.prefix, item.title, task_id)
+    content = _task_template(
+        item.prefix,
+        item.title,
+        task_id,
+        parent_gtd_id,
+        jira_parent_key,
+        jira_project,
+        jira_issue_type,
+        publish_jira,
+    )
     new_lines = list(lines)
     new_lines[line_number - 1] = "- {}: {} <{}>".format(item.prefix, item.title, link)
     _atomic_write(path, content)
     _atomic_write(gtd_path, _render(new_lines))
+    append_event(
+        repo_root,
+        "captured",
+        task_id,
+        source={
+            "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+            "command": "python:gtd task",
+        },
+        kind="task",
+        prefix=item.prefix,
+        tags=frontmatter.list_value(content.splitlines(), "tags"),
+        impact_level=frontmatter.value(content.splitlines(), "impact_level"),
+    )
+    return path
+
+
+def _level_one_section_bounds(
+    lines: List[str], heading: str
+) -> Optional[Tuple[int, int]]:
+    """Return the content bounds for one level-one Markdown section."""
+
+    header = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "# " + heading
+        ),
+        None,
+    )
+    if header is None:
+        return None
+    end = next(
+        (
+            index
+            for index in range(header + 1, len(lines))
+            if re.match(r"^#\s+", lines[index])
+        ),
+        len(lines),
+    )
+    return header + 1, end
+
+
+def create_subtask(repo_root: Path, parent_path: str, line_number: int) -> Path:
+    """Create a child task from a bullet in a parent task's Subtasks section."""
+
+    repo_root = Path(repo_root).resolve()
+    parent = _safe_link(repo_root, parent_path)
+    if not parent.is_file():
+        raise DispatchError("parent task file is missing: {}".format(parent_path))
+    parent_relative = parent.relative_to(repo_root)
+    if not parent_relative.parts or parent_relative.parts[0] != "gtd_tasks":
+        raise DispatchError("parent task must be under gtd_tasks: {}".format(parent_path))
+
+    lines = parent.read_text(encoding="utf-8").splitlines()
+    parent_gtd_id = frontmatter.value(lines, "gtd_id")
+    if parent_gtd_id is None:
+        raise DispatchError("parent task is missing gtd_id: {}".format(parent_path))
+    bounds = _level_one_section_bounds(lines, "Subtasks")
+    if bounds is None:
+        raise DispatchError("parent task is missing the # Subtasks section")
+    if line_number < 1 or line_number > len(lines):
+        raise DispatchError("line number is outside the parent task")
+    start, end = bounds
+    line_index = line_number - 1
+    if line_index < start or line_index >= end:
+        raise DispatchError("place the cursor on a bullet under # Subtasks")
+    match = SUBTASK_ITEM_RE.match(lines[line_index])
+    if not match:
+        raise DispatchError("place the cursor on a bullet under # Subtasks")
+    prefix = (match.group("prefix") or "next").lower()
+    if prefix not in PREFIXES:
+        raise DispatchError("unknown subtask prefix: {}".format(prefix))
+    title, existing_link = split_title_link(match.group("body"))
+    if not title:
+        raise DispatchError("subtask title cannot be empty")
+    if prefix == "done":
+        raise DispatchError("create a detail before changing the subtask to done")
+    if existing_link:
+        path = _safe_link(repo_root, existing_link)
+        if not path.is_file():
+            raise DispatchError("linked subtask file is missing: {}".format(existing_link))
+        return path
+
+    task_id = str(uuid.uuid4())
+    link = str(
+        (parent.with_suffix("") / (task_id + ".md")).relative_to(repo_root)
+    ).replace("\\", "/")
+    jira_parent_key = frontmatter.value(lines, "jira_key")
+    jira_project = frontmatter.value(lines, "jira_project")
+    publish_jira = (
+        (frontmatter.value(lines, "publish_jira") or "").lower() == "true"
+        and bool(jira_parent_key)
+    )
+    content = _task_template(
+        prefix,
+        title,
+        task_id,
+        parent_gtd_id,
+        jira_parent_key,
+        jira_project,
+        "Sub-task",
+        publish_jira,
+    )
+    new_lines = list(lines)
+    new_lines[line_index] = "- {}: {} <{}>".format(prefix, title, link)
+    path = _safe_link(repo_root, link)
+    _atomic_write(path, content)
+    _atomic_write(parent, _render(new_lines))
+    append_event(
+        repo_root,
+        "captured",
+        task_id,
+        source={
+            "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+            "command": "python:gtd subtask",
+        },
+        kind="task",
+        prefix=prefix,
+        tags=frontmatter.list_value(content.splitlines(), "tags"),
+        impact_level=frontmatter.value(content.splitlines(), "impact_level"),
+    )
     return path

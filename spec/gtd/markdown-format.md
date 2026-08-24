@@ -31,6 +31,17 @@ published item. Jira items may use `publish_jira`, `jira_project`,
 engine may also add `sync_hash` after a successful apply. Credentials, cookies,
 access tokens, and other secrets never belong in front matter.
 
+The task template also shows the Jira fields with safe empty defaults. Set
+`publish_jira: true` and the project/issue type before publishing. A successful
+Jira apply fills `jira_key` and `jira_url`; a child task receives its parent's
+`jira_parent_key` automatically when created with the subtask command.
+
+Subtasks may add `parent_gtd_id` and `jira_parent_key`. When created with a
+parent task, the child Markdown is placed below the parent task's directory.
+The `# Subtasks` section is public Markdown and must appear before the final
+`# Implementation Note` section. A subtask command accepts a bullet under
+that heading and replaces it with a link to the generated child Markdown.
+
 ## Task body
 
 Use one level-one heading for each major task field, in this order. Keep three
@@ -47,6 +58,11 @@ area.
 
 
 # Progress Comment
+
+
+
+# Subtasks
+
 
 
 
