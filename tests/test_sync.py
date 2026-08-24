@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -179,6 +180,12 @@ Objective.
             json.dumps({"created_at": "2026-08-25T10:00:00Z", "actions": [{}, {}]}),
             encoding="utf-8",
         )
+        (plans / "plan-2.json").write_text(
+            json.dumps({"created_at": "2026-08-24T10:00:00Z", "actions": [{}, {}, {}]}),
+            encoding="utf-8",
+        )
+        os.utime(plans / "plan-1.json", (100, 100))
+        os.utime(plans / "plan-2.json", (200, 200))
         (bases / "base-1.md").write_text("# Base\n", encoding="utf-8")
         (self.repo / "documents" / "guide.md").write_text(
             "---\nkind: document\n---\n\n<<<<<<< local\nLocal\n=======\nRemote\n>>>>>>> external\n",
@@ -188,9 +195,9 @@ Objective.
         expected = {
             "base_count": 1,
             "conflict_count": 1,
-            "latest_plan": ".jobutils/sync/plans/plan-1.json",
-            "pending_actions": 2,
-            "plan_count": 1,
+            "latest_plan": ".jobutils/sync/plans/plan-2.json",
+            "pending_actions": 3,
+            "plan_count": 2,
         }
         self.assertEqual(sync_status(self.repo), expected)
 

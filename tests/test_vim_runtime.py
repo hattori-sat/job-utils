@@ -494,6 +494,10 @@ class VimRuntimeTests(unittest.TestCase):
             (plans / "plan.json").write_text(
                 '{"plan_id": "plan-1", "actions": []}\n', encoding="utf-8"
             )
+            outside_plan = root.parent / (root.name + "-outside-plan.json")
+            outside_plan.write_text(
+                '{"plan_id": "outside", "actions": []}\n', encoding="utf-8"
+            )
             messages = root / "messages.txt"
             result = subprocess.run(
                 [
@@ -508,7 +512,10 @@ class VimRuntimeTests(unittest.TestCase):
                     "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
                     "+let g:jobutils_sync_confirm='C'",
                     "+edit " + str(root / "gtd.md"),
-                    "+GtdSyncApply",
+                    "+GtdSyncApply .jobutils/sync/plans/plan.json",
+                    "+let g:jobutils_sync_confirm='A'",
+                    "+silent! GtdSyncApply " + str(outside_plan),
+                    "+if v:errmsg !~# 'no synchronization plan' | cquit 92 | endif",
                     "+call writefile([execute('messages')], '" + str(messages) + "')",
                     "+qa!",
                 ],

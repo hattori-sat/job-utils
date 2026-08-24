@@ -32,25 +32,25 @@
 - Produces `sync_status(repo_root: Path) -> Dict[str, object]` with `plan_count`, `latest_plan`, `base_count`, `pending_actions`, and `conflict_count`.
 - Produces `jobutils sync status --repo PATH`, printing one JSON object and never contacting Jira or Confluence.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create a repository with one saved plan, one base snapshot, and a Markdown conflict marker. Assert that `sync_status()` reports those counts and that the CLI emits the same JSON.
 
-- [ ] **Step 2: Run the focused test to verify it fails**
+- [x] **Step 2: Run the focused test to verify it fails**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest tests.test_sync.SyncTests.test_sync_status_reports_local_state -v`
 
 Expected: FAIL because the status function and CLI operation do not exist.
 
-- [ ] **Step 3: Implement the minimal status boundary**
+- [x] **Step 3: Implement the minimal status boundary**
 
 Read only `.jobutils/sync/plans/*.json`, `.jobutils/sync/bases/*.md`, and managed Markdown files. Use the newest plan for `pending_actions`; return `latest_plan` relative to the GTD Repository. Do not instantiate an external adapter.
 
-- [ ] **Step 4: Run the focused test to verify it passes**
+- [x] **Step 4: Run the focused test to verify it passes**
 
 Run the focused unittest command again and confirm it passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/jobutils/sync/engine.py src/jobutils/cli.py tests/test_sync.py
@@ -72,29 +72,29 @@ git commit -m "feat: add local sync status"
 - `:GtdSyncPull` asks for confirmation before invoking `sync pull --adapter atlassian`.
 - Errors are shown through Vim's error message area; successful output is retained in `:messages`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
-Extend the Vim runtime test to assert command registration and lowercase aliases. Add a noninteractive cancellation case by setting `g:jobutils_sync_confirm` to a function that returns `C`, then assert that no Python sync command is invoked.
+Extend the Vim runtime test to assert command registration and lowercase aliases. Add a noninteractive cancellation case by setting `g:jobutils_sync_confirm` to `C`, then assert that no Python sync command is invoked.
 
-- [ ] **Step 2: Run the focused tests to verify they fail**
+- [x] **Step 2: Run the focused tests to verify they fail**
 
-Run: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest tests.test_vim_runtime.VimRuntimeTests.test_sync_commands_are_available -v`
+Run: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest tests.test_vim_runtime.VimRuntimeTests.test_sync_commands_are_available_with_lowercase_aliases -v`
 
 Expected: FAIL because the commands are not registered.
 
-- [ ] **Step 3: Implement the Vim wrappers**
+- [x] **Step 3: Implement the Vim wrappers**
 
 Reuse the existing repository-root and Python-wrapper helpers. Add a plan-path resolver based on `.jobutils/sync/plans/*.json`, a confirmation helper that accepts only `A`/`C` and `Y`/`N` as appropriate, and output/error helpers that do not expose credentials.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [x] **Step 4: Run the focused tests to verify they pass**
 
 Run the focused Vim unittest and confirm command registration and cancellation behavior.
 
-- [ ] **Step 5: Update the setup guide**
+- [x] **Step 5: Update the setup guide**
 
 Document the five commands, the explicit confirmation behavior, the newest-plan default, and the CLI equivalents without including real project identifiers or credentials.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vim/plugin/jobutils_gtd.vim vim/autoload/jobutils/gtd.vim tests/test_vim_runtime.py docs/setup/README.md
@@ -106,21 +106,21 @@ git commit -m "feat: add Vim synchronization workflow"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-25-vim-sync-commands.md`
 
-- [ ] **Step 1: Run focused synchronization and Vim tests**
+- [x] **Step 1: Run focused synchronization and Vim tests**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest tests.test_sync tests.test_vim_runtime -v`
 
-- [ ] **Step 2: Run the full suite and hygiene checks**
+- [x] **Step 2: Run the full suite and hygiene checks**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v` and `git diff --check`.
 
-- [ ] **Step 3: Review the public diff**
+- [x] **Step 3: Review the public diff**
 
 Confirm that no `.env`, `config.yaml`, private GTD repository data, Atlassian URLs, tokens, or generated output are staged.
 
-- [ ] **Step 4: Mark completed steps and commit the plan update**
+- [x] **Step 4: Mark completed steps and commit the plan update**
 
-Record the verified command and test counts in this plan, then commit only the plan update if it is useful to the reviewer.
+Verified on 2026-08-25: the full suite completed with 67 passing tests and `git diff --check` was clean. The public diff contains no credentials, local configuration, private GTD data, or generated output.
 
 ## Self-review checklist
 

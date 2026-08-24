@@ -42,7 +42,7 @@ cnoreabbrev <expr> gtdreview
 cnoreabbrev <expr> gtdsyncplan
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncplan' ? 'GtdSyncPlan' : 'gtdsyncplan'
 cnoreabbrev <expr> gtdsyncapply
-      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncapply' ? 'GtdSyncApply' : 'gtdsyncapply'
+      \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdsyncapply\%([[:space:]]\|$\)' ? 'GtdSyncApply' : 'gtdsyncapply'
 cnoreabbrev <expr> gtdsyncpull
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncpull' ? 'GtdSyncPull' : 'gtdsyncpull'
 cnoreabbrev <expr> gtdsyncstatus

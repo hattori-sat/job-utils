@@ -84,14 +84,26 @@ function! s:confirm_sync(prompt, accepted) abort
 endfunction
 
 function! s:sync_plan_path(root, requested) abort
+  let l:plan_root = resolve(fnamemodify(a:root . '/.jobutils/sync/plans', ':p'))
+  let l:plan_prefix = substitute(l:plan_root, '[\\/]\+$', '', '') . '/'
   if !empty(a:requested)
-    if filereadable(a:requested)
-      return fnamemodify(a:requested, ':p')
+    let l:requested_path = filereadable(a:requested)
+          \ ? a:requested
+          \ : a:root . '/' . a:requested
+    if !filereadable(l:requested_path)
+      return ''
     endif
-    let l:relative = a:root . '/' . a:requested
-    return filereadable(l:relative) ? fnamemodify(l:relative, ':p') : ''
+    let l:candidate = resolve(fnamemodify(l:requested_path, ':p'))
+    let l:left = substitute(l:candidate, '\\', '/', 'g')
+    let l:right = substitute(l:plan_prefix, '\\', '/', 'g')
+    if has('win32')
+      let l:left = tolower(l:left)
+      let l:right = tolower(l:right)
+    endif
+    return stridx(l:left, l:right) == 0 ? l:candidate : ''
   endif
   let l:paths = glob(a:root . '/.jobutils/sync/plans/*.json', 0, 1)
+  call sort(l:paths)
   let l:latest = ''
   let l:latest_time = -1
   for l:path in l:paths
@@ -310,7 +322,8 @@ function! jobutils#gtd#sync_apply(plan) abort
     echoerr 'GTD: no synchronization plan was found'
     return
   endif
-  if !s:confirm_sync('Apply sync plan? (A)pply/(C)ancel: ', 'A')
+  let l:display_plan = substitute(strpart(l:plan, strlen(l:root) + 1), '\\', '/', 'g')
+  if !s:confirm_sync('Apply sync plan [' . l:display_plan . ']? (A)pply/(C)ancel: ', 'A')
     echom 'GTD: sync apply cancelled'
     return
   endif

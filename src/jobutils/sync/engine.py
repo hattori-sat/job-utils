@@ -155,6 +155,7 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
         (repo_root / ".jobutils" / "sync" / "plans").glob("*.json")
     )
     plan_records = []
+    latest_plan = None
     for path in plan_paths:
         try:
             plan_records.append(
@@ -162,12 +163,11 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
             )
         except (OSError, ValueError):
             continue
-    latest_plan = None
     pending_actions = 0
     if plan_records:
         path, plan = max(
             plan_records,
-            key=lambda item: (str(item[1].get("created_at", "")), item[0].name),
+            key=lambda item: (int(item[0].stat().st_mtime), item[0].name),
         )
         latest_plan = str(path.relative_to(repo_root)).replace("\\", "/")
         pending_actions = len(plan.get("actions", []))
