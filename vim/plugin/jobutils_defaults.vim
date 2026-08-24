@@ -50,3 +50,10 @@ if get(g:, 'jobutils_enable_filetype_defaults', 1)
 endif
 command! JobutilsCMake call jobutils#project#open_cmake()
 command! JobutilsProjectRoot call jobutils#project#show_root()
+command! JobutilsCMakeConfigure call jobutils#project#configure()
+command! JobutilsCMakeBuild call jobutils#project#build()
+command! JobutilsCMakeTest call jobutils#project#test()
+command! JobutilsMake call jobutils#project#make()
+command! JobutilsClangFormat call jobutils#project#format_current()
+command! JobutilsCompileCommands call jobutils#project#open_compile_commands()
+command! JobutilsQuickfix copen

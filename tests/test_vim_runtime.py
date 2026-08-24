@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import sys
@@ -129,6 +130,8 @@ class VimRuntimeTests(unittest.TestCase):
                     vim,
                     "-Nu",
                     "NONE",
+                    "-i",
+                    "NONE",
                     "-n",
                     "-es",
                     "+set rtp^=" + str(vim_runtime),
@@ -174,6 +177,8 @@ class VimRuntimeTests(unittest.TestCase):
                     vim,
                     "-Nu",
                     "NONE",
+                    "-i",
+                    "NONE",
                     "-n",
                     "-es",
                     "+set rtp^=" + str(vim_runtime),
@@ -186,6 +191,178 @@ class VimRuntimeTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_runtime_detects_bitbake_files_and_applies_recipe_defaults(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe = root / "meta-example" / "recipes-example" / "demo" / "demo.bb"
+            recipe.parent.mkdir(parents=True)
+            recipe.write_text("SUMMARY = \"demo\"\n", encoding="utf-8")
+            checks = [
+                "+edit {}".format(recipe),
+                "+if &filetype !=# 'bitbake' | cquit 70 | endif",
+                "+if &l:commentstring !~# '^#' | cquit 71 | endif",
+                "+if &l:shiftwidth != 4 | cquit 72 | endif",
+                "+if &l:suffixesadd !~# '\\.bb' | cquit 73 | endif",
+                "+if &syntax !=# 'bitbake' | cquit 74 | endif",
+                "+qa!",
+            ]
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+                ]
+                + checks,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_project_toolchain_commands_are_available(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        commands = (
+            "JobutilsCMakeConfigure",
+            "JobutilsCMakeBuild",
+            "JobutilsCMakeTest",
+            "JobutilsMake",
+            "JobutilsClangFormat",
+            "JobutilsCompileCommands",
+            "JobutilsQuickfix",
+        )
+        checks = [
+            "+if exists(':{}') != 2 | cquit {} | endif".format(command, 80 + index)
+            for index, command in enumerate(commands)
+        ]
+        result = subprocess.run(
+            [
+                vim,
+                "-Nu",
+                "NONE",
+                "-i",
+                "NONE",
+                "-n",
+                "-es",
+                "+set rtp^=" + str(vim_runtime),
+                "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+            ]
+            + checks
+            + ["+qa!"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_cmake_configure_populates_quickfix_with_command_output(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_cmake = fake_bin / "cmake"
+            fake_cmake.write_text(
+                "#!/bin/sh\nprintf 'fake cmake configure\\n'\n",
+                encoding="utf-8",
+            )
+            fake_cmake.chmod(0o755)
+            (root / "CMakeLists.txt").write_text("project(test)\n", encoding="utf-8")
+            source = root / "main.c"
+            source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+            result_file = root / "quickfix.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+                    "+edit " + str(source),
+                    "+lcd " + str(root),
+                    "+JobutilsCMakeConfigure",
+                    "+call writefile([getqflist({'title': 1}).title, getqflist()[0].text, string(haslocaldir()), getcwd(-1)], '" + str(result_file) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(
+                result_file.read_text(encoding="utf-8").splitlines(),
+                ["CMake configure", "fake cmake configure", "1", str(Path.cwd())],
+            )
+
+    def test_clang_format_replaces_buffer_without_extra_eof_line(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_formatter = fake_bin / "clang-format"
+            fake_formatter.write_text(
+                "#!/bin/sh\nprintf 'formatted output\\n'\n",
+                encoding="utf-8",
+            )
+            fake_formatter.chmod(0o755)
+            source = root / "main.c"
+            source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+            result_file = root / "formatted.txt"
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+                    "+edit " + str(source),
+                    "+JobutilsClangFormat",
+                    "+call writefile(getline(1, '$'), '" + str(result_file) + "')",
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(
+                result_file.read_text(encoding="utf-8").splitlines(),
+                ["formatted output"],
+            )
 
     def test_gtd_dispatch_reloads_buffer_and_keeps_current_task_usable(self):
         vim = shutil.which("vim")
