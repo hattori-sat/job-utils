@@ -182,7 +182,13 @@ Objective.
             "kind": "confluence",
             "path": "documents/guide.md",
             "external_id": None,
-            "payload": {},
+            "payload": {
+                "title": "Guide",
+                "storage_body": "<h1>Guide</h1>",
+                "space_id": "space-1",
+                "space_key": "KB",
+                "version": 0,
+            },
         }
         (plans / "plan-1.json").write_text(
             json.dumps(
@@ -236,6 +242,18 @@ Objective.
         with contextlib.redirect_stdout(output):
             self.assertEqual(main(["sync", "status", "--repo", str(self.repo)]), 0)
         self.assertEqual(json.loads(output.getvalue()), expected)
+
+    def test_apply_plan_rejects_paths_outside_managed_roots(self):
+        document = self.repo / "documents" / "guide.md"
+        document.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        plan["actions"][0]["path"] = "../outside.md"
+
+        with self.assertRaisesRegex(SyncError, "invalid structure"):
+            apply_plan(self.repo, plan, MemoryAdapter())
 
 
 if __name__ == "__main__":

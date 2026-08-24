@@ -216,13 +216,66 @@ def _is_valid_plan(plan: object) -> bool:
             return False
         if action.get("kind") not in ("jira", "confluence"):
             return False
-        if not isinstance(action.get("path"), str) or not action["path"]:
+        if not _is_safe_plan_path(action.get("path")):
             return False
         if not isinstance(action.get("payload"), dict):
+            return False
+        if not _is_valid_payload(action["kind"], action["payload"]):
             return False
         if action["action"] == "update" and not action.get("external_id"):
             return False
     return True
+
+
+def _is_safe_plan_path(path: object) -> bool:
+    """Return whether a plan path is a relative managed Markdown path."""
+
+    if not isinstance(path, str) or not path:
+        return False
+    candidate = Path(path)
+    return (
+        not candidate.is_absolute()
+        and ".." not in candidate.parts
+        and candidate.parts[:1] in (("documents",), ("gtd_tasks",))
+        and candidate.suffix.lower() == ".md"
+    )
+
+
+def _is_valid_payload(kind: str, payload: Dict) -> bool:
+    """Return whether a plan payload has the fields its adapter consumes."""
+
+    if kind == "jira":
+        return (
+            isinstance(payload.get("title"), str)
+            and isinstance(payload.get("description_adf"), dict)
+            and isinstance(payload.get("issue_type"), str)
+            and isinstance(payload.get("project"), str)
+        )
+    return (
+        isinstance(payload.get("title"), str)
+        and isinstance(payload.get("storage_body"), str)
+        and isinstance(payload.get("space_id"), str)
+        and isinstance(payload.get("space_key"), str)
+        and isinstance(payload.get("version"), int)
+        and not isinstance(payload.get("version"), bool)
+    )
+
+
+def _managed_action_path(repo_root: Path, relative_path: str) -> Path:
+    """Resolve an action path and reject traversal or symlink escapes."""
+
+    if not _is_safe_plan_path(relative_path):
+        raise SyncError("sync plan contains an unsafe Markdown path")
+    candidate = (repo_root / relative_path).resolve()
+    for directory in ("documents", "gtd_tasks"):
+        managed_root = (repo_root / directory).resolve()
+        try:
+            managed_root.relative_to(repo_root)
+            candidate.relative_to(managed_root)
+        except ValueError:
+            continue
+        return candidate
+    raise SyncError("sync plan path is outside the managed Markdown roots")
 
 
 def _set_external(path: Path, kind: str, result: Dict) -> None:
@@ -249,12 +302,16 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     """Apply a non-stale plan through the selected synchronization adapter."""
 
     repo_root = Path(repo_root).resolve()
-    paths = [repo_root / action["path"] for action in plan.get("actions", [])]
+    if not _is_valid_plan(plan):
+        raise SyncError("sync plan has invalid structure")
+    paths = [
+        _managed_action_path(repo_root, action["path"])
+        for action in plan["actions"]
+    ]
     if _source_hash(repo_root, paths) != plan.get("source_hash"):
         raise SyncError("sync plan is stale; create a new plan")
     results = []
-    for action in plan.get("actions", []):
-        path = repo_root / action["path"]
+    for action, path in zip(plan["actions"], paths):
         payload = action["payload"]
         if action["action"] == "create":
             result = adapter.create(action["kind"], payload)
