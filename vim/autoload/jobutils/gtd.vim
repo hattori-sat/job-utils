@@ -66,6 +66,44 @@ function! s:show_error(output, fallback) abort
   endfor
 endfunction
 
+function! s:show_output(output) abort
+  for l:line in split(a:output, '\n')
+    if !empty(l:line)
+      echom l:line
+    endif
+  endfor
+endfunction
+
+function! s:confirm_sync(prompt, accepted) abort
+  if exists('g:jobutils_sync_confirm')
+    let l:answer = g:jobutils_sync_confirm
+  else
+    let l:answer = input(a:prompt)
+  endif
+  return toupper(strpart(substitute(l:answer, '^\s*', '', ''), 0, 1)) ==# a:accepted
+endfunction
+
+function! s:sync_plan_path(root, requested) abort
+  if !empty(a:requested)
+    if filereadable(a:requested)
+      return fnamemodify(a:requested, ':p')
+    endif
+    let l:relative = a:root . '/' . a:requested
+    return filereadable(l:relative) ? fnamemodify(l:relative, ':p') : ''
+  endif
+  let l:paths = glob(a:root . '/.jobutils/sync/plans/*.json', 0, 1)
+  let l:latest = ''
+  let l:latest_time = -1
+  for l:path in l:paths
+    let l:modified = getftime(l:path)
+    if l:modified >= l:latest_time
+      let l:latest = l:path
+      let l:latest_time = l:modified
+    endif
+  endfor
+  return l:latest
+endfunction
+
 function! s:current_item_title() abort
   let l:line = getline('.')
   if l:line !~# '^\s*-\s*[A-Za-z0-9_-]\+:'
@@ -249,4 +287,72 @@ function! jobutils#gtd#review() abort
     endif
   endfor
   echo 'GTD: review displayed in :messages'
+endfunction
+
+function! jobutils#gtd#sync_plan() abort
+  let l:result = s:run_cli('sync plan')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync plan failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync plan created; review the JSON plan before applying it'
+endfunction
+
+function! jobutils#gtd#sync_apply(plan) abort
+  let l:root = s:repo_root()
+  if empty(l:root)
+    echoerr 'GTD: gtd.md was not found from the current file'
+    return
+  endif
+  let l:plan = s:sync_plan_path(l:root, a:plan)
+  if empty(l:plan)
+    echoerr 'GTD: no synchronization plan was found'
+    return
+  endif
+  if !s:confirm_sync('Apply sync plan? (A)pply/(C)ancel: ', 'A')
+    echom 'GTD: sync apply cancelled'
+    return
+  endif
+  let l:result = s:run_cli(
+        \ 'sync apply --plan ' . shellescape(l:plan) . ' --adapter atlassian'
+        \ )
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync apply failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync apply completed'
+endfunction
+
+function! jobutils#gtd#sync_pull() abort
+  if !s:confirm_sync('Pull external changes? (Y)es/(N)o: ', 'Y')
+    echom 'GTD: sync pull cancelled'
+    return
+  endif
+  let l:result = s:run_cli('sync pull --adapter atlassian')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync pull failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync pull completed'
+endfunction
+
+function! jobutils#gtd#sync_status() abort
+  let l:result = s:run_cli('sync status')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync status failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync status displayed in :messages'
+endfunction
+
+function! jobutils#gtd#sync_help() abort
+  echo ':GtdSyncPlan              create a reviewable synchronization plan'
+  echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
+  echo ':GtdSyncPull              pull external changes after confirmation'
+  echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
+  echo ':GtdSyncHelp              show synchronization commands'
 endfunction
