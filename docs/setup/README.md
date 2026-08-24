@@ -79,6 +79,13 @@ is updated without duplication. Restart Vim after setup.
 
 The existing Vim configuration remains yours. The current runtime provides:
 
+The runtime enables Vim's standard filetype, syntax, and indent support for
+Markdown, JSON, XML, C, C++, CMake, and Makefiles. Makefiles retain literal
+tabs; Markdown and structured data use two-column indentation, while C-family
+and CMake files use four-column indentation. See the
+[Vim workflow research note](../research/vim-workflow-settings.md) for the
+reasoning and disable switches.
+
 - `:Gtd` / `:gtd` — dispatch the GTD index;
 - `:GtdTask` / `:gtdtask` — create or open the current task detail;
 - `:GtdDoc` / `:gtddoc` — create or open the current document detail;

@@ -26,8 +26,9 @@ Markdown data is maintained in a separate Git repository.
 
 - The job-utils Repository and GTD Repository are separate.
 - `gtd.md` is the GTD task index; `docs.md` is the document index.
-- Inbox is an intake area and is not a dispatch destination.
-- Known non-Inbox prefixes may move freely between sections.
+- Inbox is an intake area and a valid dispatch destination for returning an
+  item to clarification.
+- Known prefixes may move freely between sections.
 - `focus` may contain at most three items. A fourth item causes an atomic
   dispatch failure.
 - Calendar time is scheduled time, not waiting time.

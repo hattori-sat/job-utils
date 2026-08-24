@@ -12,8 +12,9 @@ for collecting the current buffer context and presenting the result or error.
 
 ## Destination rules
 
-1. A known non-Inbox prefix is a valid destination.
-2. Inbox is never a valid dispatch destination.
+1. Every known prefix, including `inbox`, is a valid destination.
+2. An `inbox` transition returns the item to the Inbox section and is recorded
+   as a normal state transition.
 3. An unknown prefix is not silently converted to another prefix. The command
    must reject it or leave the item unchanged according to the parser result.
 4. Existing section names and whole-file scanning behavior remain supported;

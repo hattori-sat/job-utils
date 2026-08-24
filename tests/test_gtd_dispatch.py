@@ -59,10 +59,14 @@ class GtdDispatchTests(unittest.TestCase):
         self.assertEqual(before, (self.repo / "gtd.md").read_bytes())
         self.assertFalse((self.repo / "gtd_tasks").exists())
 
-    def test_inbox_prefix_is_rejected(self):
-        self.write_gtd("# GTD\n\n## Today\n\n- inbox: never move here\n")
-        with self.assertRaises(DispatchError):
-            dispatch(self.repo)
+    def test_inbox_prefix_is_a_valid_destination(self):
+        self.write_gtd("# GTD\n\n## Today\n\n- inbox: return to inbox\n")
+        result = dispatch(self.repo)
+        self.assertEqual(result.moved, 1)
+        gtd = (self.repo / "gtd.md").read_text(encoding="utf-8")
+        self.assertIn("## Inbox\n\n- inbox: return to inbox", gtd)
+        detail = next((self.repo / "gtd_tasks").glob("*.md"))
+        self.assertIn("prefix: 'inbox'", detail.read_text(encoding="utf-8"))
 
     def test_arbitrary_transition_updates_detail_and_event(self):
         self.write_gtd("# GTD\n\n## Today\n\n- focus: Work <gtd_tasks/task.md>\n")

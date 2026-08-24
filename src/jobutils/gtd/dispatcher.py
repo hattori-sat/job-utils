@@ -231,8 +231,6 @@ def dispatch(
     gtd_path = (gtd_path or repo_root / "gtd.md").resolve()
     lines = _read_lines(gtd_path)
     items, prefixed = scan_items(lines)
-    if any(prefix == "inbox" for _, prefix in prefixed):
-        raise DispatchError("Inbox is not a dispatch destination")
 
     focus_count = sum(1 for item in items if item.prefix == "focus")
     if focus_count > 3:

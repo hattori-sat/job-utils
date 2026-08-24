@@ -10,6 +10,7 @@ Vim `:Gtd` command.
 
 | Prefix | Display label | Meaning |
 | --- | --- | --- |
+| `inbox` | Inbox | Captured input or work intentionally returned for re-clarification. |
 | `next` | Next Actions | An actionable item that is ready to be selected. |
 | `today` | Today | An item that should be worked on today. |
 | `focus` | Focus | An item currently receiving active attention. |
@@ -19,9 +20,11 @@ Vim `:Gtd` command.
 | `project` | Projects | A multi-step outcome or project container. |
 | `done` | Done | An item whose work is complete. |
 
-Inbox is an intake location, not a dispatch prefix. Display labels may be
-localized in Vim and reports; front matter and event records use the English
-prefix values above.
+Inbox is both an intake location and a valid dispatch prefix. Returning an
+item to Inbox means it needs capture/clarification again; it does not erase
+its stable identity or event history. Display labels may be localized in Vim
+and reports; front matter and event records use the English prefix values
+above.
 
 ## State properties
 
@@ -38,14 +41,16 @@ prefix values above.
 
 ## Allowed transition rule
 
-Any known prefix may move to any other known non-Inbox prefix when the user
-dispatches it. This includes, for example:
+Any known prefix may move to any other known prefix when the user dispatches
+it. This includes, for example:
 
 ```text
 next → today → focus → wait → today → focus → cal → today → done
 focus → next
 focus → wait
 focus → cal
+focus → inbox
+inbox → next
 ```
 
 The implementation records the transition and its timestamps. It does not

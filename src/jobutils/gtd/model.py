@@ -5,6 +5,7 @@ from typing import Dict, Optional, Tuple
 
 
 PREFIXES: Tuple[str, ...] = (
+    "inbox",
     "next",
     "today",
     "focus",
@@ -16,6 +17,7 @@ PREFIXES: Tuple[str, ...] = (
 )
 
 SECTIONS: Dict[str, str] = {
+    "inbox": "Inbox",
     "next": "Next Actions",
     "today": "Today",
     "focus": "Focus",
@@ -27,6 +29,7 @@ SECTIONS: Dict[str, str] = {
 }
 
 STATUSES: Dict[str, str] = {
+    "inbox": "inbox",
     "next": "open",
     "today": "in_progress",
     "focus": "active",
