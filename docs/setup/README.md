@@ -1,59 +1,98 @@
 # Setup
 
-job-utils expects Python and Vim to be available on the host. It does not
-install either one, and it does not install AI skills.
+job-utils is the utility repository. The GTD Markdown Repository is a separate
+local Git working tree. Setup connects the two local directories; it does not
+clone, create a remote, or push anything.
 
-## Install the Python package
+## First setup
 
-From this repository:
+Python 3.8 or newer and Vim must already be installed. The setup scripts do
+not replace either installation and do not install AI skills.
 
-```text
-python -m pip install --editable .
-```
-
-Use `python3` on systems where `python` names another interpreter. The package
-uses the Python standard library and supports Python 3.8 or newer.
-
-For development formatting, install the pinned development tool and run:
+On macOS or Ubuntu:
 
 ```text
-python -m pip install -r requirements-dev.txt
-python -m black src tests
-python -m black --check src tests
+./scripts/setup.sh
 ```
 
-## Enable the Vim commands
+On Windows PowerShell:
 
-Add the repository's Vim directory to Vim's runtime path and select the Python
-executable used by the wrapper:
-
-```vim
-set runtimepath^=/absolute/path/to/job-utils/vim
-let g:jobutils_python = 'python3'
+```powershell
+.\scripts\setup.ps1
 ```
 
-On Windows, use a Windows path and set `g:jobutils_python` to `python` or the
-absolute path to the intended interpreter.
+The script creates or reuses `job-utils/.venv`, connects it to this checkout's
+source tree, and asks for the path to an existing local Git repository
+for the GTD Markdown data. The directory must already exist and contain
+`.git`; an empty repository with a README is valid. A missing path or a
+non-Git path stops before any GTD file is created.
 
-The commands are:
+Setup is resumable. Existing files are never overwritten. Missing `gtd.md`,
+`docs.md`, task/document directories, and metric directories are created in
+the GTD Repository. Setup state and a redacted step log are stored under
+`.jobutils/setup/` in the job-utils checkout and are ignored by Git.
+
+If setup is interrupted, run the same platform script again. It reuses the
+virtual environment and fills only missing configuration or registration.
+
+## Configuration
+
+The script creates or completes `.env` in the job-utils checkout. Non-secret
+values are entered normally; Jira and Confluence tokens are requested with
+hidden input. Existing values are preserved. The file is ignored by Git and
+must never be copied into the Markdown Repository.
+
+See [environment variables](environment-variables.md) for the meaning of each
+setting. The lower-level operation is:
+
+```text
+jobutils setup init --gtd-repo /absolute/path/to/your-gtd-repository
+```
+
+The non-secret destination profile can be checked with:
+
+```text
+jobutils config validate --path /absolute/path/to/config.yaml
+```
+
+## Commands available from anywhere
+
+Setup writes wrappers to a user-local command directory and adds that
+directory to the shell profile. Open a new terminal after setup, or source the
+profile shown in the setup output.
+
+- `jobutils` runs the Python CLI using this checkout's virtual environment.
+- `jobutils-python` runs that same Python interpreter for manual work.
+- `jobutils-vim` starts Vim with the configured environment.
+- `jobutils-activate` is an optional helper for manual Python commands;
+  normal `jobutils` use does not require activation.
+
+The wrappers use absolute paths, so the CLI and Vim do not depend on the
+current directory or on a manually activated virtual environment.
+
+## Vim integration
+
+Setup writes a user-local Vim snippet containing the absolute job-utils runtime
+path and virtual-environment Python path, then registers it in `.vimrc` on
+macOS/Ubuntu or `_vimrc` on Windows. The registration is a managed block and
+is updated without duplication. Restart Vim after setup.
+
+The existing Vim configuration remains yours. The current runtime provides:
 
 - `:Gtd` / `:gtd` — dispatch the GTD index;
 - `:GtdTask` / `:gtdtask` — create or open the current task detail;
 - `:GtdTags` — show the standard tag catalog;
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
-- `:GtdMetricsHelp` — show the metrics commands.
+- `:GtdMetricsHelp` — show metrics commands.
 
-The commands locate `gtd.md` in the current directory or an ancestor and work
-with the separate GTD Markdown Repository.
-
-## CLI examples
+## Basic CLI examples
 
 ```text
-python -m jobutils gtd dispatch --repo /path/to/gtd-repository
-python -m jobutils metrics catalog --repo /path/to/gtd-repository
-python -m jobutils metrics report --repo /path/to/gtd-repository --from 2026-01-01 --to 2026-12-31
-python -m jobutils sync plan --repo /path/to/gtd-repository
+jobutils gtd dispatch --repo /absolute/path/to/your-gtd-repository
+jobutils metrics catalog --repo /absolute/path/to/your-gtd-repository
+jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026-01-01 --to 2026-12-31
+jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 ```
 
 Generated reports are placed under `.jobutils/output/<generation-date>/<period>/`
