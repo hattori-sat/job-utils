@@ -17,15 +17,14 @@ job-utils/
 ├── docs/
 │   ├── agent/
 │   ├── design/
-│   ├── operations/
 │   ├── research/
 │   ├── requirements/
-│   └── adr/
+│   ├── setup/
+│   └── skills/
 └── spec/
     ├── gtd/
     ├── sync/
-    ├── documents/
-    └── reports/
+    └── vim/
 ```
 
 ## Document roles
@@ -35,8 +34,6 @@ job-utils/
 - `docs/requirements/`: user-visible goals and invariants.
 - `docs/design/`: explanatory architecture and data-model notes.
 - `spec/`: short normative specifications that implementation must satisfy.
-- `docs/operations/`: setup, usage, and troubleshooting guidance.
-- `docs/adr/`: durable decisions with meaningful trade-offs.
 - `docs/agent/`: shared guidance for coding agents and maintainers.
 - `docs/setup/`: cross-platform setup and configuration examples.
 - `docs/skills/`: maintained AI skill catalog without auto-installation.
@@ -53,8 +50,8 @@ gtd-repository/
 └── .jobutils/
     ├── metrics/events/
     ├── output/
-    ├── snapshots/
-    └── taxonomy.md
+    ├── sync/
+    └── setup/
 ```
 
 The GTD Repository is an input and data location for job-utils. It is not
