@@ -76,6 +76,7 @@ GTD_GITIGNORE_BLOCK = "\n".join(
     [
         "# >>> job-utils setup >>>",
         ".jobutils/output/",
+        ".jobutils/sync/plans/",
         "# <<< job-utils setup <<<",
     ]
 )

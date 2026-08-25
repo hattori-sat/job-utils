@@ -1,6 +1,7 @@
 """Explicit local Git helpers with no real remote push operation."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Dict, List
@@ -10,6 +11,25 @@ from .metrics.events import append_event
 
 class GitOperationError(Exception):
     """A local Git operation could not be completed safely."""
+
+
+def _redact_git_output(value: str) -> str:
+    """Remove credentials if Git includes an authenticated URL in output."""
+
+    return re.sub(
+        r"(?i)(https?://)[^/\s@]+:[^/\s@]+@",
+        r"\1<credentials>@",
+        value,
+    )
+
+
+def _validate_git_argument(value: str, label: str) -> str:
+    """Reject option-like or whitespace-containing remote/ref arguments."""
+
+    value = str(value or "").strip()
+    if not value or value.startswith("-") or any(char.isspace() for char in value):
+        raise GitOperationError("{} must be a non-empty Git name".format(label))
+    return value
 
 
 def _run(repo_root: Path, arguments: List[str]) -> subprocess.CompletedProcess:
@@ -105,6 +125,66 @@ def commit(repo_root: Path, message: str) -> Dict[str, str]:
     if revision.returncode:
         raise GitOperationError(revision.stderr.strip() or "could not read commit")
     return {"revision": revision.stdout.strip(), "message": message}
+
+
+def push(
+    repo_root: Path,
+    remote: str = "origin",
+    branch: str = "",
+    set_upstream: bool = False,
+) -> Dict[str, object]:
+    """Push a clean local branch to an existing configured Git remote.
+
+    Authentication is delegated to Git's configured credential helper or SSH
+    agent. The operation never invokes a shell and never force-pushes.
+    """
+
+    repo_root = Path(repo_root).resolve()
+    if status(repo_root).strip():
+        raise GitOperationError("working tree must be clean before push")
+    selected_remote = _validate_git_argument(remote, "remote")
+    remote_result = _run(repo_root, ["remote", "get-url", selected_remote])
+    if remote_result.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                remote_result.stderr.strip() or "configured remote was not found"
+            )
+        )
+    current_branch = _run(repo_root, ["branch", "--show-current"])
+    if current_branch.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                current_branch.stderr.strip() or "could not determine branch"
+            )
+        )
+    selected_branch = _validate_git_argument(
+        branch or current_branch.stdout.strip(), "branch"
+    )
+    arguments = ["push"]
+    if set_upstream:
+        arguments.append("--set-upstream")
+    arguments.extend([selected_remote, selected_branch])
+    result = _run(repo_root, arguments)
+    if result.returncode:
+        raise GitOperationError(
+            _redact_git_output(result.stderr.strip() or "git push failed")
+        )
+    revision = _run(repo_root, ["rev-parse", "HEAD"])
+    if revision.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                revision.stderr.strip() or "could not determine revision"
+            )
+        )
+    return {
+        "performed": True,
+        "remote": selected_remote,
+        "branch": selected_branch,
+        "revision": revision.stdout.strip(),
+        "output": _redact_git_output(
+            "\n".join(value for value in (result.stdout, result.stderr) if value)
+        ).strip(),
+    }
 
 
 def push_mock(

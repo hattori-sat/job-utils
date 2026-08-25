@@ -109,11 +109,12 @@ Available commands include:
 - `:GtdStop` / `:gtdstop` — record the end of an explicit work interval for the current task;
 - `:GtdMetricsHelp` — show metrics commands;
 - `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan;
-- `:GtdSyncApply [plan]` — apply the newest or named plan after confirmation;
+- `:GtdSyncApply [plan]` — apply the newest or named plan, commit local sync state, and push after confirmation;
 - `:GtdSyncPull` — pull external changes after confirmation;
 - `:GtdSyncStatus` — show local plans, bases, pending actions, and conflicts;
 - `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
 - `:GtdSyncCheck` — inspect external drift without changing files;
+- `:GtdGitPush [remote] [branch]` — push an already committed GTD repository branch after confirmation;
 - `:GtdSyncHelp` — show synchronization commands;
 - `:GtdFormat` / `:gtdformat` — normalize a saved Markdown buffer while preserving fenced code and front matter;
 - `:PasteImage [alt text]` / `:pasteimage` — save a clipboard PNG under `assets/` and insert its Markdown link;
@@ -168,9 +169,8 @@ jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
 jobutils git status --repo /absolute/path/to/your-gtd-repository
 jobutils git commit --repo /absolute/path/to/your-gtd-repository --message "chore: save local GTD changes"
+jobutils git push --repo /absolute/path/to/your-gtd-repository --remote origin
 jobutils git push-mock --repo /absolute/path/to/your-gtd-repository
-# Local-only HTTP entrypoint; default bind address is 127.0.0.1.
-jobutils serve --repo /absolute/path/to/your-gtd-repository --port 8765
 ```
 
 When state-based time is too broad, record a focused work interval explicitly:
@@ -183,13 +183,16 @@ jobutils metrics stop --repo /absolute/path/to/your-gtd-repository --gtd-id TASK
 Reports use explicit work intervals for active time when they exist for a task;
 otherwise they use the GTD state transitions.
 
-Synchronization is deliberately a two-step workflow. `sync plan` reads
-publishable Markdown and writes a JSON plan under
+Synchronization has an explicit review step followed by one confirmed apply.
+`sync plan` reads publishable Markdown and writes a JSON plan under
 `.jobutils/sync/plans/`. Review that file, then use `:GtdSyncApply` or
-`jobutils sync apply --plan PATH --adapter atlassian`. The Vim command uses
-the newest plan when no path is supplied and asks for confirmation before it
-writes to Jira or Confluence. `:GtdSyncPull` also asks for confirmation before
-writing pulled changes into local Markdown.
+`jobutils sync apply --plan PATH --adapter atlassian`. The apply operation uses
+the newest plan when no path is supplied, asks for confirmation before writing
+to Jira or Confluence, commits the resulting local synchronization metadata,
+and pushes the commit to the configured Git remote. If push fails, rerun
+`jobutils git push` after resolving the remote problem. `:GtdSyncPull` asks for
+confirmation before writing pulled changes into local Markdown; commit and
+push those pulled changes with the Git commands above.
 
 Use `jobutils sync check --repo /absolute/path/to/your-gtd-repository
 --adapter atlassian` or `:GtdSyncCheck` before planning when you want to see

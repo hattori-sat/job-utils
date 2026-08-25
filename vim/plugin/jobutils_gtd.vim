@@ -23,6 +23,7 @@ command! GtdSyncStatus call jobutils#gtd#sync_status()
 command! -nargs=? GtdSyncRebind call jobutils#gtd#sync_rebind(<q-args>)
 command! GtdSyncCheck call jobutils#gtd#sync_check()
 command! GtdSyncHelp call jobutils#gtd#sync_help()
+command! -nargs=* GtdGitPush call jobutils#gtd#git_push(<q-args>)
 
 augroup jobutils_gtd_detail_links
   autocmd!
@@ -70,3 +71,5 @@ cnoreabbrev <expr> gtdsynccheck
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynccheck' ? 'GtdSyncCheck' : 'gtdsynccheck'
 cnoreabbrev <expr> gtdsynchelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynchelp' ? 'GtdSyncHelp' : 'gtdsynchelp'
+cnoreabbrev <expr> gtdgitpush
+      \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdgitpush\%([[:space:]]\|$\)' ? 'GtdGitPush' : 'gtdgitpush'

@@ -39,6 +39,12 @@ external identity is already present. Successful application writes resolved
 non-secret routing defaults, external IDs, URLs, versions, and hashes back to
 front matter; credentials are never written.
 
+For the Atlassian adapter, `sync apply` also commits the generated Markdown
+and `.jobutils` synchronization state and performs a real Git push to the
+configured remote. The command requires a clean worktree before the external
+request and stops with the local commit preserved if the push fails. The
+`--no-git-sync` option is available for tests and controlled recovery.
+
 Confluence actions include a local `parent_path` when a child document has a
 parent Markdown file. Apply orders parent actions before children and passes a
 newly-created parent's page ID to the child request. The resolved

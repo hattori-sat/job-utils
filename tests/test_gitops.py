@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -6,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.gitops import GitOperationError, commit, push_mock, status
+from jobutils.gitops import GitOperationError, commit, push, push_mock, status
 from jobutils.cli import main
 
 
@@ -58,6 +61,48 @@ class GitOpsTests(unittest.TestCase):
         self.assertEqual(result["command"][:2], ["git", "push"])
         self.assertEqual(status(self.repo), "")
 
+    def test_push_writes_committed_revision_to_configured_remote(self):
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("local\n", encoding="utf-8")
+        committed = commit(self.repo, "test: prepare real push")
+
+        result = push(self.repo)
+
+        self.assertTrue(result["performed"])
+        self.assertEqual(result["remote"], "origin")
+        self.assertEqual(result["revision"], committed["revision"])
+        branch = result["branch"]
+        remote_revision = subprocess.check_output(
+            ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/{}".format(branch)],
+            text=True,
+        ).strip()
+        self.assertEqual(remote_revision, committed["revision"])
+
+    def test_push_rejects_dirty_worktree_before_remote_operation(self):
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("local\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(GitOperationError, "clean"):
+            push(self.repo)
+
+        refs = subprocess.check_output(
+            ["git", "--git-dir", str(remote), "for-each-ref", "--format=%(refname)", "refs/heads"],
+            text=True,
+        )
+        self.assertEqual(refs, "")
+
     def test_cli_exposes_local_commit_and_push_simulation(self):
         (self.repo / "note.md").write_text("local\n", encoding="utf-8")
         output = io.StringIO()
@@ -94,6 +139,26 @@ class GitOpsTests(unittest.TestCase):
         pushed = json.loads(output.getvalue())
         self.assertEqual(pushed["revision"], revision)
         self.assertFalse(pushed["performed"])
+
+    def test_cli_exposes_real_push(self):
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("local\n", encoding="utf-8")
+        committed = commit(self.repo, "test: prepare cli push")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(
+                main(["git", "push", "--repo", str(self.repo)]),
+                0,
+            )
+        pushed = json.loads(output.getvalue())
+        self.assertTrue(pushed["performed"])
+        self.assertEqual(pushed["revision"], committed["revision"])
 
 
 if __name__ == "__main__":

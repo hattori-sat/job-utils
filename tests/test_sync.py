@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -69,6 +70,73 @@ Private content.
         updated = path.read_text(encoding="utf-8")
         self.assertIn("confluence_page_id:", updated)
         self.assertIn("confluence_url:", updated)
+
+    def test_cli_sync_apply_commits_and_pushes_requested_git_sync(self):
+        repo = Path(self.tempdir.name) / "repo"
+        repo.mkdir()
+        (repo / "documents").mkdir()
+        (repo / "gtd_tasks").mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "local-test"], cwd=repo, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True
+        )
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True
+        )
+        document = repo / "documents" / "guide.md"
+        document.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\n---\n\n# Guide\n\nContent.\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: seed sync repository"],
+            cwd=repo,
+            check=True,
+        )
+        plan_path = Path(self.tempdir.name) / "plan.json"
+        plan_path.write_text(
+            json.dumps(create_plan(repo)), encoding="utf-8"
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(
+                [
+                    "sync",
+                    "apply",
+                    "--repo",
+                    str(repo),
+                    "--plan",
+                    str(plan_path),
+                    "--adapter",
+                    "memory",
+                    "--git-sync",
+                ]
+            )
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertTrue(response["git"]["push"]["performed"])
+        local_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+        ).strip()
+        branch = response["git"]["push"]["branch"]
+        remote_revision = subprocess.check_output(
+            [
+                "git",
+                "--git-dir",
+                str(remote),
+                "rev-parse",
+                "refs/heads/{}".format(branch),
+            ],
+            text=True,
+        ).strip()
+        self.assertEqual(remote_revision, local_revision)
 
     def test_plan_skips_unmanaged_markdown_without_front_matter(self):
         (self.repo / "documents" / "notes.md").write_text(

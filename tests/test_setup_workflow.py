@@ -67,6 +67,19 @@ class SetupWorkflowTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(ignored.returncode, 0, ignored.stderr)
+            ignored_plan = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "check-ignore",
+                    ".jobutils/sync/plans/plan.json",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(ignored_plan.returncode, 0, ignored_plan.stderr)
 
     def test_bootstrap_adds_reciprocal_index_links_without_duplicates(self):
         with tempfile.TemporaryDirectory() as directory:

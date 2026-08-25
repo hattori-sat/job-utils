@@ -448,6 +448,7 @@ class VimRuntimeTests(unittest.TestCase):
             "GtdDocHelp",
             "GtdStart",
             "GtdStop",
+            "GtdGitPush",
         )
         command_check = " || ".join(
             "exists(':{}') != 2".format(command) for command in commands
@@ -467,6 +468,7 @@ class VimRuntimeTests(unittest.TestCase):
                 "gtddochelp",
                 "gtdstart",
                 "gtdstop",
+                "gtdgitpush",
             )
         )
         checks = [
