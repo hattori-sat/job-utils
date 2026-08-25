@@ -22,7 +22,7 @@ ENV_SPECS = (
     ("JIRA_BASE_URL", "Jira base URL", False, "https://your-domain.atlassian.net"),
     ("JIRA_EMAIL", "Jira account email", False, ""),
     ("JIRA_API_TOKEN", "Jira API token", True, ""),
-    ("JIRA_PROJECT", "Jira project key", False, ""),
+    ("JIRA_PROJECT", "Jira project key", False, "LIG"),
     ("JIRA_ISSUE_TYPE", "Jira issue type", False, "Task"),
     (
         "JIRA_PROGRESS_COMMENT_FIELD",
@@ -44,9 +44,9 @@ ENV_SPECS = (
     ),
     ("CONFLUENCE_EMAIL", "Confluence account email", False, ""),
     ("CONFLUENCE_API_TOKEN", "Confluence API token", True, ""),
-    ("CONFLUENCE_SPACE_ID", "Confluence space id", False, ""),
-    ("CONFLUENCE_SPACE_KEY", "Confluence space key", False, ""),
-    ("CONFLUENCE_PARENT_ID", "Confluence parent page id", False, ""),
+    ("CONFLUENCE_SPACE_ID", "Confluence space id", False, "163844"),
+    ("CONFLUENCE_SPACE_KEY", "Confluence space key", False, "KB"),
+    ("CONFLUENCE_PARENT_ID", "Confluence parent page id", False, "210632708"),
 )
 
 GTD_TEMPLATE = """# GTD
@@ -179,6 +179,24 @@ def _write_if_missing(path: Path, content: str) -> bool:
     return True
 
 
+def _ensure_index_link(path: Path, link: str) -> bool:
+    """Add one reciprocal index link without replacing existing content."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if link in lines:
+        return False
+    heading = next(
+        (index for index, line in enumerate(lines) if line.startswith("# ")),
+        None,
+    )
+    if heading is None:
+        lines = [link, ""] + lines
+    else:
+        lines[heading + 1 : heading + 1] = ["", link]
+    path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    return True
+
+
 def bootstrap_gtd_repository(path: Path) -> List[str]:
     """Create missing GTD Repository indexes and runtime directories safely."""
 
@@ -188,6 +206,10 @@ def bootstrap_gtd_repository(path: Path) -> List[str]:
         created.append("gtd.md")
     if _write_if_missing(path / "docs.md", DOCUMENTS_TEMPLATE):
         created.append("docs.md")
+    if _ensure_index_link(path / "gtd.md", "[Documents](docs.md)"):
+        created.append("gtd.md link")
+    if _ensure_index_link(path / "docs.md", "[GTD](gtd.md)"):
+        created.append("docs.md link")
     gitignore = path / ".gitignore"
     existing_gitignore = (
         gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""

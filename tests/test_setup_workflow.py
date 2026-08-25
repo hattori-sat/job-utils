@@ -53,9 +53,9 @@ class SetupWorkflowTests(unittest.TestCase):
             self._init_git(repo)
             (repo / "gtd.md").write_text("# My GTD\n", encoding="utf-8")
             bootstrap_gtd_repository(repo)
-            self.assertEqual(
-                (repo / "gtd.md").read_text(encoding="utf-8"), "# My GTD\n"
-            )
+            gtd = (repo / "gtd.md").read_text(encoding="utf-8")
+            self.assertIn("# My GTD\n", gtd)
+            self.assertIn("[Documents](docs.md)", gtd)
             self.assertTrue((repo / "docs.md").is_file())
             self.assertTrue((repo / "gtd_tasks").is_dir())
             self.assertTrue((repo / "documents").is_dir())
@@ -67,6 +67,23 @@ class SetupWorkflowTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(ignored.returncode, 0, ignored.stderr)
+
+    def test_bootstrap_adds_reciprocal_index_links_without_duplicates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self._init_git(repo)
+            (repo / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            (repo / "docs.md").write_text("# Documents\n", encoding="utf-8")
+
+            bootstrap_gtd_repository(repo)
+            bootstrap_gtd_repository(repo)
+
+            gtd = (repo / "gtd.md").read_text(encoding="utf-8")
+            docs = (repo / "docs.md").read_text(encoding="utf-8")
+            self.assertIn("[Documents](docs.md)", gtd)
+            self.assertIn("[GTD](gtd.md)", docs)
+            self.assertEqual(gtd.count("[Documents](docs.md)"), 1)
+            self.assertEqual(docs.count("[GTD](gtd.md)"), 1)
 
     def test_setup_records_state_and_redacted_log(self):
         with tempfile.TemporaryDirectory() as directory:
