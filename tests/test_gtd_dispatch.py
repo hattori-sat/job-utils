@@ -243,6 +243,35 @@ private
         with self.assertRaisesRegex(DispatchError, "Subtasks"):
             create_subtask(self.repo, "gtd_tasks/parent.md", 6)
 
+    def test_create_subtask_inherits_jira_publication_before_parent_key_exists(self):
+        parent = self.repo / "gtd_tasks" / "parent.md"
+        parent.parent.mkdir()
+        parent.write_text(
+            """---
+gtd_id: 'parent-1'
+publish_jira: true
+jira_project: 'LIG'
+jira_key: null
+---
+
+# Parent
+
+# Subtasks
+
+- next: Child before parent publish
+
+# Implementation Note
+""",
+            encoding="utf-8",
+        )
+
+        child = create_subtask(self.repo, "gtd_tasks/parent.md", 12)
+
+        child_text = child.read_text(encoding="utf-8")
+        self.assertIn("publish_jira: true", child_text)
+        self.assertIn("jira_parent_key: null", child_text)
+        self.assertIn("jira_parent_path: 'gtd_tasks/parent.md'", child_text)
+
 
 if __name__ == "__main__":
     unittest.main()

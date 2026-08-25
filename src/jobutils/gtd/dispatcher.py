@@ -151,6 +151,7 @@ def _task_template(
     task_id: str,
     parent_gtd_id: Optional[str] = None,
     jira_parent_key: Optional[str] = None,
+    jira_parent_path: Optional[str] = None,
     jira_project: Optional[str] = None,
     jira_issue_type: Optional[str] = None,
     publish_jira: bool = False,
@@ -182,6 +183,9 @@ def _task_template(
         ),
         "jira_issue_type: {}".format(frontmatter.quote(jira_issue_type)),
         "jira_parent_key: {}".format(jira_parent_value),
+        "jira_parent_path: {}".format(
+            frontmatter.quote(jira_parent_path) if jira_parent_path else "null"
+        ),
         "jira_progress_comment_field: {}".format(
             frontmatter.quote(jira_progress_comment_field)
             if jira_progress_comment_field
@@ -421,6 +425,7 @@ def create_task(
     parent_lines: List[str] = []
     parent_gtd_id = None
     jira_parent_key = None
+    jira_parent_path = None
     jira_project = None
     jira_issue_type = None
     publish_jira = False
@@ -437,10 +442,10 @@ def create_task(
         if parent_gtd_id is None:
             raise DispatchError("parent task is missing gtd_id: {}".format(parent_path))
         jira_parent_key = frontmatter.value(parent_lines, "jira_key")
+        jira_parent_path = str(parent.relative_to(repo_root)).replace("\\", "/")
         jira_project = frontmatter.value(parent_lines, "jira_project")
         publish_jira = (
             (frontmatter.value(parent_lines, "publish_jira") or "").lower() == "true"
-            and bool(jira_parent_key)
         )
         jira_issue_type = "Sub-task"
         link = str((parent.with_suffix("") / (task_id + ".md")).relative_to(repo_root)).replace(
@@ -455,6 +460,7 @@ def create_task(
         task_id,
         parent_gtd_id,
         jira_parent_key,
+        jira_parent_path,
         jira_project,
         jira_issue_type,
         publish_jira,
@@ -544,10 +550,10 @@ def create_subtask(repo_root: Path, parent_path: str, line_number: int) -> Path:
         (parent.with_suffix("") / (task_id + ".md")).relative_to(repo_root)
     ).replace("\\", "/")
     jira_parent_key = frontmatter.value(lines, "jira_key")
+    jira_parent_path = str(parent.relative_to(repo_root)).replace("\\", "/")
     jira_project = frontmatter.value(lines, "jira_project")
     publish_jira = (
         (frontmatter.value(lines, "publish_jira") or "").lower() == "true"
-        and bool(jira_parent_key)
     )
     content = _task_template(
         prefix,
@@ -555,6 +561,7 @@ def create_subtask(repo_root: Path, parent_path: str, line_number: int) -> Path:
         task_id,
         parent_gtd_id,
         jira_parent_key,
+        jira_parent_path,
         jira_project,
         "Sub-task",
         publish_jira,

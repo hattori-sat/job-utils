@@ -1,7 +1,5 @@
 # Vim Sync Commands Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Provide a safe Vim entry point for reviewing synchronization plans, applying the selected plan to Jira/Confluence, pulling external changes, and inspecting local synchronization state.
 
 **Architecture:** Keep synchronization decisions in the existing Python engine. Add a read-only `sync status` CLI operation, then wrap `sync plan`, `sync apply`, `sync pull`, and `sync status` in the classic Vim GTD plugin. Apply and pull remain confirmation-gated; apply uses the most recent saved plan unless a plan path is supplied.
