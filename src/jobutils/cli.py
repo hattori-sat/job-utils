@@ -22,6 +22,7 @@ from .gtd import (
 from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
+from .markdown.images import ClipboardError, paste_clipboard_image
 from .setup_workflow import SetupError, run_setup
 from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
 from .sync.engine import (
@@ -64,6 +65,25 @@ def _parser() -> argparse.ArgumentParser:
     subdocument_parser.add_argument("--repo", default=".")
     subdocument_parser.add_argument("--parent", required=True)
     subdocument_parser.add_argument("--line", type=int, required=True)
+    markdown = subparsers.add_parser("markdown")
+    markdown_subparsers = markdown.add_subparsers(dest="operation")
+    paste_image_parser = markdown_subparsers.add_parser("paste-image")
+    paste_image_parser.add_argument("--repo", default=".")
+    paste_image_parser.add_argument("--file", required=True)
+    paste_image_parser.add_argument("--name", default=None)
+    paste_image_parser.add_argument(
+        "--provider",
+        choices=(
+            "auto",
+            "pngpaste",
+            "osascript",
+            "powershell",
+            "pwsh",
+            "wl-paste",
+            "xclip",
+        ),
+        default="auto",
+    )
     metrics = subparsers.add_parser("metrics")
     metrics_subparsers = metrics.add_subparsers(dest="operation")
     report_parser = metrics_subparsers.add_parser("report")
@@ -152,6 +172,22 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 1
         print("config valid: {}".format(args.path))
         return 0
+    if args.domain == "markdown" and args.operation == "paste-image":
+        try:
+            markdown_file = Path(args.file)
+            if not markdown_file.is_absolute():
+                markdown_file = Path(args.repo) / markdown_file
+            result = paste_clipboard_image(
+                markdown_file,
+                alt_text=args.name,
+                provider=args.provider,
+            )
+            print("image: {}".format(result["image_path"]))
+            print("markdown: {}".format(result["markdown"]))
+            return 0
+        except (ClipboardError, OSError, ValueError) as error:
+            print("IMAGE: paste failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "metrics" and args.operation == "report":
         formats = [value.strip() for value in args.format.split(",") if value.strip()]
         output_dir = Path(args.output_dir) if args.output_dir else None
