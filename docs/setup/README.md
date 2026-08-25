@@ -110,6 +110,7 @@ Available commands include:
 - `:GtdSyncApply [plan]` — apply the newest or named plan after confirmation;
 - `:GtdSyncPull` — pull external changes after confirmation;
 - `:GtdSyncStatus` — show local plans, bases, pending actions, and conflicts;
+- `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
 - `:GtdSyncHelp` — show synchronization commands;
 - `:JobutilsProjectRoot` — show the nearest CMake project root.
 - `:JobutilsCMake` — open the nearest `CMakeLists.txt` in a split.

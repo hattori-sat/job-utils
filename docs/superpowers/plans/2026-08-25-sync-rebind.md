@@ -73,12 +73,12 @@
 - `:GtdSyncRebind [path]` prompts for target kind, external ID, URL, and optional parent ID; lowercase `:gtdsyncrebind` behaves identically.
 - With no path, the current managed Markdown buffer is used; the Python command remains available for scripts and recovery.
 
-- [ ] Add Vim runtime tests for command registration, lowercase alias, current-buffer path derivation, and cancellation without file mutation.
-- [ ] Run the focused Vim tests and verify the new command tests fail.
-- [ ] Implement the Vim wrapper using the existing confirmation/error display helpers and the Python `sync rebind` command.
-- [ ] Document when to use rebind, how parent IDs are updated, and how to regenerate/apply a plan afterward.
-- [ ] Run all Vim and sync tests and verify the command help remains consistent.
-- [ ] Commit as `feat: expose sync rebind in Vim`.
+- [x] Add Vim runtime tests for command registration, lowercase alias, current-buffer path derivation, and cancellation without file mutation.
+- [x] Run the focused Vim tests and verify the new command tests fail.
+- [x] Implement the Vim wrapper using the existing confirmation/error display helpers and the Python `sync rebind` command.
+- [x] Document when to use rebind, how parent IDs are updated, and how to regenerate/apply a plan afterward.
+- [x] Run all Vim and sync tests and verify the command help remains consistent.
+- [x] Commit as `feat: expose sync rebind in Vim`.
 
 ### Task 4: Sanitize, review, and prepare the PR
 

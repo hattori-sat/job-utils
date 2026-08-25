@@ -440,6 +440,7 @@ class VimRuntimeTests(unittest.TestCase):
             "GtdSyncApply",
             "GtdSyncPull",
             "GtdSyncStatus",
+            "GtdSyncRebind",
             "GtdSyncHelp",
             "GtdSubdocument",
             "GtdTaskHelp",
@@ -455,6 +456,7 @@ class VimRuntimeTests(unittest.TestCase):
                 "gtdsyncapply",
                 "gtdsyncpull",
                 "gtdsyncstatus",
+                "gtdsyncrebind",
                 "gtdsynchelp",
                 "gtdsubdocument",
                 "gtdtaskhelp",
@@ -531,6 +533,62 @@ class VimRuntimeTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("cancel", messages.read_text(encoding="utf-8").lower())
+
+    def test_sync_rebind_cancellation_does_not_mutate_current_markdown(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "documents").mkdir()
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            document = root / "documents" / "guide.md"
+            original = (
+                "---\nkind: document\nconfluence_page_id: null\n---\n\n# Guide\n"
+            )
+            document.write_text(original, encoding="utf-8")
+            messages = root / "messages.txt"
+            commands = root / "rebind.vim"
+            commands.write_text(
+                "\n".join(
+                    [
+                        "set rtp^={}".format(vim_runtime),
+                        "source {}/plugin/jobutils_gtd.vim".format(vim_runtime),
+                        "let g:jobutils_sync_confirm='N'",
+                        "let g:jobutils_rebind_kind='confluence'",
+                        "let g:jobutils_rebind_external_id='210632708'",
+                        "let g:jobutils_rebind_url='https://example.invalid/wiki/pages/210632708'",
+                        "let g:jobutils_rebind_parent_id='parent-1'",
+                        "edit {}".format(document),
+                        "GtdSyncRebind",
+                        "call writefile([execute('messages')], '{}')".format(messages),
+                        "qa!",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-i",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "-S",
+                    str(commands),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(document.read_text(encoding="utf-8"), original)
             self.assertIn("cancel", messages.read_text(encoding="utf-8").lower())
 
     def test_sync_apply_without_path_uses_latest_status_plan(self):

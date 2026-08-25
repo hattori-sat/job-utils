@@ -8,6 +8,14 @@ function! s:repo_root() abort
   return fnamemodify(l:gtd, ':p:h')
 endfunction
 
+function! s:current_managed_path(root) abort
+  let l:current = resolve(fnamemodify(expand('%:p'), ':p'))
+  let l:root = substitute(resolve(fnamemodify(a:root, ':p')), '[\\/]\+$', '', '')
+  let l:prefix = l:root . '/'
+  let l:pattern = '^' . escape(l:prefix, '\.^$~[]')
+  return substitute(l:current, l:pattern, '', '')
+endfunction
+
 function! s:document_root() abort
   let l:current = expand('%:p')
   let l:directory = empty(l:current) ? getcwd() : fnamemodify(l:current, ':h')
@@ -81,6 +89,14 @@ function! s:confirm_sync(prompt, accepted) abort
     let l:answer = input(a:prompt)
   endif
   return toupper(strpart(substitute(l:answer, '^\s*', '', ''), 0, 1)) ==# a:accepted
+endfunction
+
+function! s:rebind_prompt(name, prompt) abort
+  let l:key = 'jobutils_rebind_' . a:name
+  if has_key(g:, l:key)
+    return get(g:, l:key)
+  endif
+  return input(a:prompt)
 endfunction
 
 function! s:sync_plan_path(root, requested) abort
@@ -449,10 +465,54 @@ function! jobutils#gtd#sync_status() abort
   echo 'GTD: sync status displayed in :messages'
 endfunction
 
+function! jobutils#gtd#sync_rebind(requested) abort
+  let l:root = s:repo_root()
+  if empty(l:root)
+    echoerr 'GTD: gtd.md was not found from the current file'
+    return
+  endif
+  let l:path = empty(a:requested)
+        \ ? s:current_managed_path(l:root)
+        \ : substitute(a:requested, '^\./', '', '')
+  if empty(l:path)
+    echoerr 'GTD: current buffer is not a managed Markdown file'
+    return
+  endif
+  let l:kind = tolower(s:rebind_prompt('kind', 'External kind (jira/confluence): '))
+  let l:external_id = s:rebind_prompt('external_id', 'External ID: ')
+  let l:url = s:rebind_prompt('url', 'External URL (optional): ')
+  let l:parent_id = s:rebind_prompt('parent_id', 'Parent ID (optional): ')
+  if empty(l:kind) || empty(l:external_id)
+    echoerr 'GTD: rebind requires a kind and external ID'
+    return
+  endif
+  if !s:confirm_sync('Rebind local identity for ' . l:path . '? (Y)es/(N)o: ', 'Y')
+    echom 'GTD: sync rebind cancelled'
+    return
+  endif
+  let l:args = 'sync rebind --path ' . shellescape(l:path)
+        \ . ' --kind ' . shellescape(l:kind)
+        \ . ' --external-id ' . shellescape(l:external_id)
+  if !empty(l:url)
+    let l:args .= ' --url ' . shellescape(l:url)
+  endif
+  if !empty(l:parent_id)
+    let l:args .= ' --parent-id ' . shellescape(l:parent_id)
+  endif
+  let l:result = s:run_cli(l:args)
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync rebind failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync rebind completed; create a new sync plan'
+endfunction
+
 function! jobutils#gtd#sync_help() abort
   echo ':GtdSyncPlan              create a reviewable synchronization plan'
   echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
   echo ':GtdSyncPull              pull external changes after confirmation'
   echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
+  echo ':GtdSyncRebind [path]     update a stored Jira/Confluence identity locally'
   echo ':GtdSyncHelp              show synchronization commands'
 endfunction
