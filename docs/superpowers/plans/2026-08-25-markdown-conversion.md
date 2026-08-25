@@ -114,9 +114,13 @@ Confluence storage XML-like markup, `unittest`.
 - [x] Add an end-to-end fixture test that plans a document and task while
   asserting Implementation Notes and private paths are absent from both
   external payload types.
-- [ ] Run the complete test suite and `git diff --check`.
-- [ ] Inspect the public diff for credentials, real Atlassian identifiers,
+- [x] Run the complete test suite and `git diff --check`.
+- [x] Inspect the public diff for credentials, real Atlassian identifiers,
   local paths, and unnecessary private context.
-- [ ] Request code review and resolve Critical/Important findings.
+- [x] Request code review and resolve Critical/Important findings.
 - [ ] Push only `codex/pr-markdown-conversion` and open one PR against `main`.
   Do not merge it.
+
+Verification so far: 91 tests pass, `git diff --check` is clean, and the final
+review found no Critical or Important findings. Minor limitations remain for
+optional Markdown link titles and URLs with more than one nested parenthesis.
