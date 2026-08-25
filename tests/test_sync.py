@@ -322,6 +322,42 @@ Base content.
         )
         self.assertEqual(rendered, "[Target](https://example.invalid/page)")
 
+    def test_apply_adds_clickable_external_reference_to_task_markdown(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task'
+publish_jira: 'true'
+jira_project: 'LIG'
+jira_issue_type: 'Task'
+---
+
+# Summary
+
+Task summary.
+
+# References
+
+- Internal design note
+
+# Implementation Note
+
+Private note.
+""",
+            encoding="utf-8",
+        )
+
+        apply_plan(self.repo, create_plan(self.repo), MemoryAdapter())
+
+        updated = path.read_text(encoding="utf-8")
+        self.assertIn(
+            "- Jira: [MEM-1](https://memory.invalid/jira/MEM-1)", updated
+        )
+        self.assertIn("- Internal design note", updated)
+        self.assertIn("# Implementation Note\n\nPrivate note.", updated)
+
     def test_jira_payload_keeps_progress_comment_as_configured_text_field(self):
         path = self.repo / "gtd_tasks" / "task.md"
         path.write_text(

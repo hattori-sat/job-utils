@@ -83,3 +83,47 @@ def append_state_change(
         },
         **fields,
     )
+
+
+def append_work_started(
+    repo_root: Path,
+    gtd_id: str,
+    command: str = "python:metrics start",
+    machine_id: Optional[str] = None,
+    occurred_at: Optional[str] = None,
+) -> Path:
+    """Record the beginning of an explicit active-work interval."""
+
+    return append_event(
+        repo_root,
+        "work_started",
+        gtd_id,
+        occurred_at=occurred_at,
+        source={
+            "machine_id": machine_id
+            or os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+            "command": command,
+        },
+    )
+
+
+def append_work_stopped(
+    repo_root: Path,
+    gtd_id: str,
+    command: str = "python:metrics stop",
+    machine_id: Optional[str] = None,
+    occurred_at: Optional[str] = None,
+) -> Path:
+    """Record the end of an explicit active-work interval."""
+
+    return append_event(
+        repo_root,
+        "work_stopped",
+        gtd_id,
+        occurred_at=occurred_at,
+        source={
+            "machine_id": machine_id
+            or os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+            "command": command,
+        },
+    )

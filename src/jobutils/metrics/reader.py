@@ -1,6 +1,7 @@
 """Read and validate yearly JSONL metric event files."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -33,6 +34,13 @@ def read_events(repo_root: Path) -> Tuple[List[Dict], List[str]]:
             except ValueError as error:
                 errors.append("{}:{}: {}".format(display_path, line_number, error))
                 continue
+            if not isinstance(event, dict):
+                errors.append(
+                    "{}:{}: event must be a JSON object".format(
+                        display_path, line_number
+                    )
+                )
+                continue
             event_id = event.get("event_id")
             if not event_id or event_id in seen:
                 if event_id:
@@ -43,6 +51,15 @@ def read_events(repo_root: Path) -> Tuple[List[Dict], List[str]]:
                 errors.append(
                     "{}:{}: missing gtd_id or occurred_at".format(
                         display_path, line_number
+                    )
+                )
+                continue
+            try:
+                datetime.fromisoformat(str(event["occurred_at"]).replace("Z", "+00:00"))
+            except (TypeError, ValueError) as error:
+                errors.append(
+                    "{}:{}: invalid occurred_at: {}".format(
+                        display_path, line_number, error
                     )
                 )
                 continue

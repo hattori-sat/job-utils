@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from jobutils.metrics.aggregate import aggregate
+from jobutils.cli import main
 from jobutils.metrics.reports import (
     build_report,
     csv_text,
@@ -120,6 +121,26 @@ class MetricsTests(unittest.TestCase):
             report["read_errors"][0].startswith(".jobutils/metrics/events/")
         )
 
+    def test_invalid_event_timestamp_is_reported_without_breaking_reports(self):
+        event_path = self.repo / ".jobutils/metrics/events/2026.jsonl"
+        with event_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "event_id": "invalid-time",
+                        "event_type": "state_changed",
+                        "occurred_at": "not-a-timestamp",
+                        "gtd_id": "broken-task",
+                    }
+                )
+                + "\n"
+            )
+
+        report = build_report(self.repo, "2026-01-01", "2026-01-01")
+
+        self.assertEqual(report["task_count"], 1)
+        self.assertEqual(len(report["read_errors"]), 1)
+
     def test_reports_lead_cycle_estimate_and_grouped_throughput(self):
         event_path = self.repo / ".jobutils/metrics/events/2026.jsonl"
         event_path.write_text(
@@ -174,6 +195,80 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(report["by_tag"]["implementation"]["completed_count"], 1)
         self.assertEqual(report["by_impact_level"]["medium"]["task_count"], 1)
         self.assertEqual(report["daily_throughput"], [{"date": "2026-01-01", "completed_count": 1}])
+
+    def test_explicit_work_intervals_override_state_based_active_time(self):
+        events = [
+            {
+                "event_id": "state-start",
+                "event_type": "state_changed",
+                "occurred_at": "2026-01-01T09:00:00+00:00",
+                "gtd_id": "explicit-task",
+                "from": {"prefix": "next"},
+                "to": {"prefix": "today"},
+            },
+            {
+                "event_id": "work-start",
+                "event_type": "work_started",
+                "occurred_at": "2026-01-01T09:15:00+00:00",
+                "gtd_id": "explicit-task",
+            },
+            {
+                "event_id": "work-stop",
+                "event_type": "work_stopped",
+                "occurred_at": "2026-01-01T09:45:00+00:00",
+                "gtd_id": "explicit-task",
+            },
+            {
+                "event_id": "state-done",
+                "event_type": "state_changed",
+                "occurred_at": "2026-01-01T10:00:00+00:00",
+                "gtd_id": "explicit-task",
+                "from": {"prefix": "today"},
+                "to": {"prefix": "done"},
+            },
+        ]
+        report = aggregate(
+            events,
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 1, 1, 23, 59, tzinfo=timezone.utc),
+        )
+        self.assertEqual(report["tasks"][0]["active_seconds"], 30 * 60)
+
+    def test_cli_records_explicit_work_interval_events(self):
+        self.assertEqual(
+            main(
+                [
+                    "metrics",
+                    "start",
+                    "--repo",
+                    str(self.repo),
+                    "--gtd-id",
+                    "cli-task",
+                    "--at",
+                    "2026-01-01T09:00:00+00:00",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            main(
+                [
+                    "metrics",
+                    "stop",
+                    "--repo",
+                    str(self.repo),
+                    "--gtd-id",
+                    "cli-task",
+                    "--at",
+                    "2026-01-01T09:30:00+00:00",
+                ]
+            ),
+            0,
+        )
+        events = list((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        text = "\n".join(path.read_text(encoding="utf-8") for path in events)
+        self.assertIn('"event_type": "work_started"', text)
+        self.assertIn('"event_type": "work_stopped"', text)
 
 
 if __name__ == "__main__":

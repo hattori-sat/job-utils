@@ -514,6 +514,83 @@ def _set_external(
     os.replace(str(temporary), str(path))
 
 
+def _replace_level_one_section(body: str, heading: str, content: str) -> str:
+    """Replace or append one public level-one Markdown section."""
+
+    heading_pattern = re.compile(
+        r"(?m)^#\s+{}\s*$".format(re.escape(heading))
+    )
+    match = heading_pattern.search(body)
+    replacement = "# {}\n\n{}\n".format(heading, content.strip())
+    if not match:
+        return body.rstrip() + "\n\n" + replacement
+    next_heading = re.search(r"(?m)^#\s+.+?\s*$", body[match.end() :])
+    end = match.end() + next_heading.start() if next_heading else len(body)
+    return body[: match.start()] + replacement + body[end:]
+
+
+def _materialize_external_reference(path: Path, kind: str, result: Dict) -> None:
+    """Add or update a clickable external identity in local References."""
+
+    url = _validate_external_url(result.get("url"))
+    if not url:
+        return
+    if kind == "jira":
+        identity = result.get("key") or result.get("id") or "issue"
+        label = "Jira"
+    else:
+        identity = result.get("id") or "page"
+        label = "Confluence"
+    reference = "- {}: [{}]({})".format(label, identity, url)
+
+    document = parse_document(str(path))
+    lines = document.section("References").splitlines()
+    updated = []
+    replaced = False
+    prefix = "- {}:".format(label)
+    for line in lines:
+        if line.strip().startswith(prefix):
+            if not replaced:
+                updated.append(reference)
+                replaced = True
+            continue
+        updated.append(line)
+    if not replaced:
+        while updated and not updated[-1].strip():
+            updated.pop()
+        if updated:
+            updated.append("")
+        updated.append(reference)
+
+    public_body = _replace_level_one_section(
+        document.public_body, "References", "\n".join(updated)
+    )
+    body = public_body.rstrip() + "\n"
+    if document.implementation_note.strip():
+        body += "\n# Implementation Note\n\n{}\n".format(
+            document.implementation_note.strip()
+        )
+
+    source_lines = path.read_text(encoding="utf-8").splitlines()
+    location = frontmatter.bounds(source_lines)
+    if location is None:
+        raise SyncError("managed Markdown has no front matter: {}".format(path))
+    rendered = "\n".join(source_lines[: location[1] + 1]) + "\n\n" + body.lstrip()
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=".jobutils-reference-", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(rendered)
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
 def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     """Apply a non-stale plan through the selected synchronization adapter."""
 
@@ -558,6 +635,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             result = adapter.create(action["kind"], payload)
         else:
             result = adapter.update(action["kind"], action["external_id"], payload)
+        _materialize_external_reference(path, action["kind"], result)
         _set_external(path, action["kind"], result, payload)
         external_id = (
             result.get("id")

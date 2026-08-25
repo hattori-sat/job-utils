@@ -20,6 +20,7 @@ from .gtd import (
     dispatch,
 )
 from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
+from .metrics.events import append_work_started, append_work_stopped
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
 from .markdown.images import ClipboardError, paste_clipboard_image
@@ -97,6 +98,16 @@ def _parser() -> argparse.ArgumentParser:
     catalog_parser.add_argument("--repo", default=".")
     review_parser = metrics_subparsers.add_parser("review")
     review_parser.add_argument("--repo", default=".")
+    start_parser = metrics_subparsers.add_parser("start")
+    start_parser.add_argument("--repo", default=".")
+    start_parser.add_argument("--gtd-id", required=True)
+    start_parser.add_argument("--at", default=None)
+    start_parser.add_argument("--machine-id", default=None)
+    stop_parser = metrics_subparsers.add_parser("stop")
+    stop_parser.add_argument("--repo", default=".")
+    stop_parser.add_argument("--gtd-id", required=True)
+    stop_parser.add_argument("--at", default=None)
+    stop_parser.add_argument("--machine-id", default=None)
     sync = subparsers.add_parser("sync")
     sync_subparsers = sync.add_subparsers(dest="operation")
     plan_parser = sync_subparsers.add_parser("plan")
@@ -238,6 +249,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         print("Data errors: {}".format(len(summary["read_errors"])))
         return 1 if summary["read_errors"] else 0
+    if args.domain == "metrics" and args.operation == "start":
+        append_work_started(
+            Path(args.repo),
+            args.gtd_id,
+            machine_id=args.machine_id,
+            occurred_at=args.at,
+        )
+        print("work started: {}".format(args.gtd_id))
+        return 0
+    if args.domain == "metrics" and args.operation == "stop":
+        append_work_stopped(
+            Path(args.repo),
+            args.gtd_id,
+            machine_id=args.machine_id,
+            occurred_at=args.at,
+        )
+        print("work stopped: {}".format(args.gtd_id))
+        return 0
     if args.domain == "sync" and args.operation == "plan":
         plan = create_plan(Path(args.repo))
         path = Path(args.output) if args.output else save_plan(Path(args.repo), plan)

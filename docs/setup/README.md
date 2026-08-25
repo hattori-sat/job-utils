@@ -105,6 +105,8 @@ Available commands include:
 - `:GtdTags` — show the standard tag catalog;
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
+- `:GtdStart` / `:gtdstart` — record the start of an explicit work interval for the current task;
+- `:GtdStop` / `:gtdstop` — record the end of an explicit work interval for the current task;
 - `:GtdMetricsHelp` — show metrics commands;
 - `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan;
 - `:GtdSyncApply [plan]` — apply the newest or named plan after confirmation;
@@ -162,6 +164,16 @@ jobutils markdown paste-image --repo /absolute/path/to/your-gtd-repository --fil
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
 ```
+
+When state-based time is too broad, record a focused work interval explicitly:
+
+```bash
+jobutils metrics start --repo /absolute/path/to/your-gtd-repository --gtd-id TASK-UUID
+jobutils metrics stop --repo /absolute/path/to/your-gtd-repository --gtd-id TASK-UUID
+```
+
+Reports use explicit work intervals for active time when they exist for a task;
+otherwise they use the GTD state transitions.
 
 Synchronization is deliberately a two-step workflow. `sync plan` reads
 publishable Markdown and writes a JSON plan under

@@ -10,7 +10,7 @@ ACTIVE_PREFIXES = {"today", "focus"}
 def parse_timestamp(value: str) -> datetime:
     """Parse an ISO timestamp and default naive values to UTC."""
 
-    parsed = datetime.fromisoformat(value)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
@@ -42,6 +42,9 @@ def _new_task(task_id: str) -> Dict:
         "tags": [],
         "impact_level": None,
         "estimate_minutes": None,
+        "explicit_active_seconds": 0,
+        "work_started_at": None,
+        "has_explicit_work": False,
     }
 
 
@@ -96,6 +99,20 @@ def aggregate(events: Iterable[Dict], report_start: datetime, report_end: dateti
             task["first_event_at"] = occurred
         _merge_metadata(task, event)
         event_type = event.get("event_type")
+        if event_type == "work_started":
+            task["has_explicit_work"] = True
+            if task["work_started_at"] is None:
+                task["work_started_at"] = occurred
+            continue
+        if event_type == "work_stopped":
+            task["has_explicit_work"] = True
+            started = task.get("work_started_at")
+            if started is not None:
+                task["explicit_active_seconds"] += _overlap_seconds(
+                    started, occurred, report_start, report_end
+                )
+                task["work_started_at"] = None
+            continue
         if event_type == "captured" and task["captured_at"] is None:
             task["captured_at"] = occurred
         if event_type == "completed" and task["completed_at"] is None:
@@ -126,6 +143,15 @@ def aggregate(events: Iterable[Dict], report_start: datetime, report_end: dateti
             task["completed_at"] = occurred
 
     for task in tasks.values():
+        started = task.pop("work_started_at", None)
+        if started is not None:
+            task["explicit_active_seconds"] += _overlap_seconds(
+                started, report_end, report_start, report_end
+            )
+        if task["has_explicit_work"]:
+            task["active_seconds"] = task["explicit_active_seconds"]
+        task.pop("explicit_active_seconds", None)
+        task.pop("has_explicit_work", None)
         last_state_at = task.pop("last_state_at", None)
         if last_state_at is not None and task["final_prefix"] != "done":
             seconds = _overlap_seconds(
