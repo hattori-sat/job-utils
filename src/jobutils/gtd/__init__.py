@@ -7,13 +7,14 @@ from .dispatcher import (
     create_task,
     dispatch,
 )
-from .documents import DocumentError, create_document
+from .documents import DocumentError, create_document, create_subdocument
 
 __all__ = [
     "DispatchError",
     "DispatchResult",
     "DocumentError",
     "create_document",
+    "create_subdocument",
     "create_subtask",
     "create_task",
     "dispatch",

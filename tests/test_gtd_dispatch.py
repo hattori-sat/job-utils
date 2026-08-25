@@ -1,8 +1,10 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
@@ -90,6 +92,35 @@ title: 'Work'
         self.assertEqual(event["from"]["prefix"], "today")
         self.assertEqual(event["to"]["prefix"], "focus")
 
+    def test_state_event_keeps_estimate_and_kind_for_metrics(self):
+        self.write_gtd("# GTD\n\n## Today\n\n- focus: Work <gtd_tasks/task.md>\n")
+        detail = self.repo / "gtd_tasks" / "task.md"
+        detail.parent.mkdir()
+        detail.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+prefix: 'today'
+status: 'in_progress'
+title: 'Work'
+estimate_minutes: 45
+tags: [implementation]
+impact_level: medium
+---
+
+# Work
+""",
+            encoding="utf-8",
+        )
+
+        dispatch(self.repo, machine_id="test-machine")
+
+        event_file = next((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        event = json.loads(event_file.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(event["kind"], "task")
+        self.assertEqual(event["estimate_minutes"], "45")
+        self.assertEqual(event["tags"], ["implementation"])
+
     def test_create_task_returns_existing_link(self):
         self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Work\n")
         path = create_task(self.repo, 5)
@@ -137,6 +168,12 @@ title: 'Work'
         self.assertIn("jira_parent_key: null", text)
         self.assertIn("jira_key: null", text)
         self.assertIn("jira_url: null", text)
+
+    def test_created_task_uses_configured_default_jira_issue_type(self):
+        self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Configured type\n")
+        with patch.dict(os.environ, {"JIRA_ISSUE_TYPE": "Story"}, clear=False):
+            path = create_task(self.repo, 5)
+        self.assertIn("jira_issue_type: 'Story'", path.read_text(encoding="utf-8"))
 
     def test_create_subtask_under_parent_directory_and_links_jira_parent(self):
         self.write_gtd("# GTD\n\n## Next Actions\n\n- next: Child work\n")

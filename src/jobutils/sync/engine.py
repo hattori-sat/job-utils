@@ -13,6 +13,7 @@ from jobutils.gtd import frontmatter
 from jobutils.markdown.normalize import markdown_to_storage, parse_document
 
 from .adapters import SyncAdapter
+from .defaults import load_sync_defaults
 from .references import externalize_references
 from .merge import three_way_merge
 
@@ -59,6 +60,7 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
     """Build the sanitized adapter payload for one Markdown document."""
 
     document = parse_document(str(path))
+    defaults = load_sync_defaults()
     body = externalize_references(repo_root, document.public_body, path)
     if kind == "jira":
         return {
@@ -70,22 +72,27 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
                     {"type": "paragraph", "content": [{"type": "text", "text": body}]}
                 ],
             },
-            "project": document.metadata.get("jira_project") or "",
-            "issue_type": document.metadata.get("jira_issue_type") or "Task",
+            "project": document.metadata.get("jira_project") or defaults["jira_project"],
+            "issue_type": document.metadata.get("jira_issue_type") or defaults["jira_issue_type"],
             "parent_key": document.metadata.get("jira_parent_key"),
             "jira_key": document.metadata.get("jira_key"),
             "jira_url": document.metadata.get("jira_url"),
             "progress_comment": document.section("Progress Comment"),
             "progress_comment_field": document.metadata.get(
                 "jira_progress_comment_field"
-            ),
+            )
+            or defaults["jira_progress_comment_field"],
         }
     return {
         "title": document.metadata.get("title") or path.stem,
         "storage_body": markdown_to_storage(body),
-        "space_id": document.metadata.get("confluence_space_id") or "",
-        "space_key": document.metadata.get("confluence_space_key") or "",
-        "parent_id": document.metadata.get("confluence_parent_id"),
+        "space_id": document.metadata.get("confluence_space_id")
+        or defaults["confluence_space_id"],
+        "space_key": document.metadata.get("confluence_space_key")
+        or defaults["confluence_space_key"],
+        "parent_id": document.metadata.get("confluence_parent_id")
+        or defaults["confluence_parent_id"]
+        or None,
         "confluence_url": document.metadata.get("confluence_url"),
         "version": int(document.metadata.get("confluence_version") or "0"),
     }
@@ -98,7 +105,7 @@ def create_plan(repo_root: Path) -> Dict:
     paths = _documents(repo_root)
     actions: List[Dict] = []
     published_paths: List[Path] = []
-    for path in paths:
+    for path in sorted(paths, key=lambda value: (len(value.relative_to(repo_root).parts), str(value))):
         document = parse_document(str(path))
         kind = (
             "jira"
@@ -115,23 +122,61 @@ def create_plan(repo_root: Path) -> Dict:
             if kind == "jira"
             else document.metadata.get("confluence_page_id")
         )
-        action = "update" if external_id else "create"
-        actions.append(
-            {
+        operation = "update" if external_id else "create"
+        action = {
                 "action_id": str(uuid.uuid4()),
-                "action": action,
+                "action": operation,
                 "kind": kind,
                 "path": str(path.relative_to(repo_root)).replace("\\", "/"),
                 "external_id": external_id,
                 "payload": _payload(repo_root, path, kind),
-            }
-        )
+        }
+        if kind == "confluence":
+            parent_path = document.metadata.get("confluence_parent_path")
+            if not parent_path:
+                relative = path.relative_to(repo_root)
+                if len(relative.parts) >= 3:
+                    candidate = path.parent.parent / (path.parent.name + ".md")
+                    if candidate.is_file():
+                        parent_path = str(candidate.relative_to(repo_root)).replace(
+                            "\\", "/"
+                        )
+            if parent_path:
+                action["parent_path"] = parent_path.replace("\\", "/")
+        actions.append(action)
     return {
         "plan_id": str(uuid.uuid4()),
         "created_at": datetime.utcnow().isoformat() + "Z",
         "source_hash": _source_hash(repo_root, published_paths),
-        "actions": actions,
+        "actions": _order_actions(actions),
     }
+
+
+def _order_actions(actions: List[Dict]) -> List[Dict]:
+    """Order actions so Confluence parents are applied before children."""
+
+    by_path = {action["path"]: action for action in actions}
+    ordered: List[Dict] = []
+    visiting = set()
+    visited = set()
+
+    def visit(path: str) -> None:
+        if path in visiting:
+            raise SyncError("cyclic Confluence parent relationship: {}".format(path))
+        if path in visited:
+            return
+        visiting.add(path)
+        action = by_path[path]
+        parent_path = action.get("parent_path") if action["kind"] == "confluence" else None
+        if parent_path in by_path:
+            visit(parent_path)
+        visiting.remove(path)
+        visited.add(path)
+        ordered.append(action)
+
+    for action in actions:
+        visit(action["path"])
+    return ordered
 
 
 def save_plan(repo_root: Path, plan: Dict) -> Path:
@@ -158,6 +203,8 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
     plan_records = []
     latest_plan = None
     for path in plan_paths:
+        if path.is_symlink() or not path.is_file():
+            continue
         try:
             plan = json.loads(path.read_text(encoding="utf-8"))
             if _is_valid_plan(plan):
@@ -222,6 +269,9 @@ def _is_valid_plan(plan: object) -> bool:
             return False
         if not _is_valid_payload(action["kind"], action["payload"]):
             return False
+        if action["kind"] == "confluence" and action.get("parent_path"):
+            if not _is_safe_document_path(action["parent_path"]):
+                return False
         if action["action"] == "update" and not action.get("external_id"):
             return False
     return True
@@ -239,6 +289,14 @@ def _is_safe_plan_path(path: object) -> bool:
         and candidate.parts[:1] in (("documents",), ("gtd_tasks",))
         and candidate.suffix.lower() == ".md"
     )
+
+
+def _is_safe_document_path(path: object) -> bool:
+    """Return whether a path can identify a Confluence parent document."""
+
+    if not _is_safe_plan_path(path):
+        return False
+    return Path(path).parts[:1] == ("documents",)
 
 
 def _is_valid_payload(kind: str, payload: Dict) -> bool:
@@ -278,7 +336,9 @@ def _managed_action_path(repo_root: Path, relative_path: str) -> Path:
     raise SyncError("sync plan path is outside the managed Markdown roots")
 
 
-def _set_external(path: Path, kind: str, result: Dict) -> None:
+def _set_external(
+    path: Path, kind: str, result: Dict, payload: Optional[Dict] = None
+) -> None:
     """Write returned external identities and the post-apply source hash."""
 
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -290,6 +350,10 @@ def _set_external(path: Path, kind: str, result: Dict) -> None:
     else:
         frontmatter.set_value(lines, "confluence_page_id", str(result.get("id") or ""))
         frontmatter.set_value(lines, "confluence_url", result.get("url") or "")
+        if payload and payload.get("parent_id"):
+            frontmatter.set_value(
+                lines, "confluence_parent_id", str(payload["parent_id"])
+            )
     frontmatter.set_value(
         lines, "sync_hash", hashlib.sha256(path.read_bytes()).hexdigest()
     )
@@ -311,13 +375,29 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     if _source_hash(repo_root, paths) != plan.get("source_hash"):
         raise SyncError("sync plan is stale; create a new plan")
     results = []
+    created_external_ids: Dict[str, str] = {}
     for action, path in zip(plan["actions"], paths):
-        payload = action["payload"]
+        payload = dict(action["payload"])
+        if action["kind"] == "confluence" and action.get("parent_path"):
+            parent_path = action["parent_path"]
+            parent_id = created_external_ids.get(parent_path)
+            if not parent_id:
+                parent = _managed_action_path(repo_root, parent_path)
+                if parent.is_file():
+                    parent_lines = parent.read_text(encoding="utf-8").splitlines()
+                    parent_id = frontmatter.value(parent_lines, "confluence_page_id")
+            if not parent_id:
+                raise SyncError(
+                    "Confluence parent page is unresolved: {}".format(parent_path)
+                )
+            payload["parent_id"] = parent_id
         if action["action"] == "create":
             result = adapter.create(action["kind"], payload)
         else:
             result = adapter.update(action["kind"], action["external_id"], payload)
-        _set_external(path, action["kind"], result)
+        _set_external(path, action["kind"], result, payload)
+        if action["kind"] == "confluence" and result.get("id"):
+            created_external_ids[action["path"]] = str(result["id"])
         _write_base(repo_root, path, parse_document(str(path)).public_body)
         results.append(
             {"action_id": action["action_id"], "path": action["path"], "result": result}

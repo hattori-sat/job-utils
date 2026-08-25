@@ -47,6 +47,7 @@ gtd-repository/
 ├── docs.md
 ├── gtd_tasks/
 ├── documents/
+│   └── <document>/<child>.md  # recursive document pages
 └── .jobutils/
     ├── metrics/events/
     ├── output/

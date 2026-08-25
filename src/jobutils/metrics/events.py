@@ -53,6 +53,8 @@ def append_state_change(
     machine_id: Optional[str] = None,
     tags: Optional[list] = None,
     impact_level: Optional[str] = None,
+    kind: Optional[str] = None,
+    estimate_minutes: Optional[str] = None,
 ) -> Path:
     """Record a prefix transition with the task's current taxonomy values."""
 
@@ -65,6 +67,10 @@ def append_state_change(
         fields["tags"] = tags
     if impact_level:
         fields["impact_level"] = impact_level
+    if kind:
+        fields["kind"] = kind
+    if estimate_minutes is not None:
+        fields["estimate_minutes"] = estimate_minutes
     return append_event(
         repo_root,
         "state_changed",

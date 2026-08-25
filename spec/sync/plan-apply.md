@@ -17,6 +17,12 @@ JSON plan containing:
 
 Plan generation does not call an external write endpoint.
 
+When a Markdown value is empty, the plan builder uses the non-secret defaults
+loaded from the local environment: Jira project, issue type, and progress
+comment field, plus Confluence space and default parent page. Explicit front
+matter values take precedence. These defaults are never written into plans as
+credentials.
+
 The local `sync status` operation reports plan, base-snapshot, pending-action,
 and conflict counts from `.jobutils/` without contacting an external service.
 
@@ -27,6 +33,11 @@ rejected and must be regenerated. Applying a plan is idempotent when the
 external identity is already present. Successful application writes only
 external IDs, URLs, versions, and hashes back to front matter; credentials are
 never written.
+
+Confluence actions include a local `parent_path` when a child document has a
+parent Markdown file. Apply orders parent actions before children and passes a
+newly-created parent's page ID to the child request. The resolved
+`confluence_parent_id` is written back to the child front matter.
 
 The adapter boundary supports a deterministic memory adapter for tests and an
 HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.

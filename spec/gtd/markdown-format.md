@@ -31,6 +31,11 @@ published item. Jira items may use `publish_jira`, `jira_project`,
 engine may also add `sync_hash` after a successful apply. Credentials, cookies,
 access tokens, and other secrets never belong in front matter.
 
+Document Markdown also uses `publish_confluence`, `parent_document_id`, and
+`confluence_parent_path` to retain the local hierarchy. A document's external
+parent is represented by `confluence_parent_id` after apply; the local parent
+path remains available for plan generation and rebinding.
+
 The task template also shows the Jira fields with safe empty defaults. Set
 `publish_jira: true` and the project/issue type before publishing. A successful
 Jira apply fills `jira_key` and `jira_url`; a child task receives its parent's
@@ -41,6 +46,9 @@ parent task, the child Markdown is placed below the parent task's directory.
 The `# Subtasks` section is public Markdown and must appear before the final
 `# Implementation Note` section. A subtask command accepts a bullet under
 that heading and replaces it with a link to the generated child Markdown.
+Document Markdown may use the analogous `# Subdocuments` section. A
+subdocument command accepts a bullet under that heading, stores the child
+below the parent document directory, and can be repeated recursively.
 
 ## Task body
 

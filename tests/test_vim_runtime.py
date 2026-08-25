@@ -441,6 +441,9 @@ class VimRuntimeTests(unittest.TestCase):
             "GtdSyncPull",
             "GtdSyncStatus",
             "GtdSyncHelp",
+            "GtdSubdocument",
+            "GtdTaskHelp",
+            "GtdDocHelp",
         )
         command_check = " || ".join(
             "exists(':{}') != 2".format(command) for command in commands
@@ -453,6 +456,9 @@ class VimRuntimeTests(unittest.TestCase):
                 "gtdsyncpull",
                 "gtdsyncstatus",
                 "gtdsynchelp",
+                "gtdsubdocument",
+                "gtdtaskhelp",
+                "gtddochelp",
             )
         )
         checks = [
@@ -670,6 +676,64 @@ private
                 "jira_parent_key: 'DEMO-1'",
                 children[0].read_text(encoding="utf-8"),
             )
+
+    def test_gtd_subdocument_uses_current_document_as_parent(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            (root / "docs.md").write_text("# Documents\n", encoding="utf-8")
+            parent = root / "documents" / "parent.md"
+            parent.parent.mkdir()
+            parent.write_text(
+                """---
+gtd_id: 'parent-1'
+kind: 'document'
+title: 'Parent'
+publish_confluence: true
+confluence_page_id: 'page-parent'
+---
+
+# Parent
+
+# Subdocuments
+
+- Child from Vim
+
+# Implementation Note
+
+private
+""",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_gtd.vim"),
+                    "+let g:jobutils_python='{}'".format(sys.executable),
+                    "+edit {}".format(parent),
+                    "+call cursor(13, 1)",
+                    "+GtdSubdocument",
+                    "+qall!",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**__import__("os").environ, "PYTHONPATH": str(repository / "src")},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            children = list((root / "documents" / "parent").glob("*.md"))
+            self.assertEqual(len(children), 1)
+            self.assertIn("confluence_parent_id: 'page-parent'", children[0].read_text())
 
 
 if __name__ == "__main__":

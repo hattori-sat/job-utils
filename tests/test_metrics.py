@@ -12,6 +12,7 @@ from jobutils.metrics.reports import (
     build_report,
     csv_text,
     html_text,
+    json_text,
     svg_text,
     write_reports,
 )
@@ -80,17 +81,23 @@ class MetricsTests(unittest.TestCase):
     def test_reports_are_generated_on_demand(self):
         target = self.repo / "output"
         paths = write_reports(
-            self.repo, "2026-01-01", "2026-01-01", ["html", "csv", "svg"], target
+            self.repo, "2026-01-01", "2026-01-01", ["html", "csv", "svg", "json"], target
         )
-        self.assertEqual({path.suffix for path in paths}, {".html", ".csv", ".svg"})
+        self.assertEqual(
+            {path.suffix for path in paths}, {".html", ".csv", ".svg", ".json"}
+        )
         self.assertIn(
             "task-1", csv_text(build_report(self.repo, "2026-01-01", "2026-01-01"))
         )
         self.assertIn(
             "<html", html_text(build_report(self.repo, "2026-01-01", "2026-01-01"))
         )
+        self.assertIn("throughput-start", html_text(build_report(self.repo, "2026-01-01", "2026-01-01")))
         self.assertIn(
             "<svg", svg_text(build_report(self.repo, "2026-01-01", "2026-01-01"))
+        )
+        self.assertIn(
+            '"task_count"', json_text(build_report(self.repo, "2026-01-01", "2026-01-01"))
         )
 
     def test_duplicate_event_ids_are_ignored(self):
@@ -102,6 +109,71 @@ class MetricsTests(unittest.TestCase):
         report = build_report(self.repo, "2026-01-01", "2026-01-01")
         self.assertEqual(report["task_count"], 1)
         self.assertEqual(report["read_errors"], [])
+
+    def test_read_errors_use_repository_relative_paths(self):
+        event_path = self.repo / ".jobutils/metrics/events/2026.jsonl"
+        event_path.write_text("not json\n", encoding="utf-8")
+        report = build_report(self.repo, "2026-01-01", "2026-01-01")
+        self.assertTrue(report["read_errors"])
+        self.assertNotIn(str(self.repo), report["read_errors"][0])
+        self.assertTrue(
+            report["read_errors"][0].startswith(".jobutils/metrics/events/")
+        )
+
+    def test_reports_lead_cycle_estimate_and_grouped_throughput(self):
+        event_path = self.repo / ".jobutils/metrics/events/2026.jsonl"
+        event_path.write_text(
+            "\n".join(
+                json.dumps(event)
+                for event in [
+                    {
+                        "event_id": "capture-2",
+                        "event_type": "captured",
+                        "occurred_at": "2026-01-01T08:00:00+00:00",
+                        "gtd_id": "task-2",
+                        "kind": "task",
+                        "tags": ["implementation"],
+                        "impact_level": "medium",
+                        "estimate_minutes": 60,
+                    },
+                    {
+                        "event_id": "state-2a",
+                        "event_type": "state_changed",
+                        "occurred_at": "2026-01-01T09:00:00+00:00",
+                        "gtd_id": "task-2",
+                        "from": {"prefix": "next"},
+                        "to": {"prefix": "today"},
+                        "tags": ["implementation"],
+                        "impact_level": "medium",
+                        "estimate_minutes": 60,
+                    },
+                    {
+                        "event_id": "state-2b",
+                        "event_type": "state_changed",
+                        "occurred_at": "2026-01-01T10:00:00+00:00",
+                        "gtd_id": "task-2",
+                        "from": {"prefix": "today"},
+                        "to": {"prefix": "done"},
+                        "tags": ["implementation"],
+                        "impact_level": "medium",
+                        "estimate_minutes": 60,
+                    },
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        report = build_report(self.repo, "2026-01-01", "2026-01-01")
+        task = next(row for row in report["tasks"] if row["gtd_id"] == "task-2")
+
+        self.assertEqual(task["lead_seconds"], 7200)
+        self.assertEqual(task["cycle_seconds"], 3600)
+        self.assertEqual(task["estimate_minutes"], 60)
+        self.assertEqual(task["estimate_variance_seconds"], 0)
+        self.assertEqual(report["by_tag"]["implementation"]["completed_count"], 1)
+        self.assertEqual(report["by_impact_level"]["medium"]["task_count"], 1)
+        self.assertEqual(report["daily_throughput"], [{"date": "2026-01-01", "completed_count": 1}])
 
 
 if __name__ == "__main__":

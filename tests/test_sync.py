@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
@@ -59,6 +60,113 @@ Private content.
         updated = path.read_text(encoding="utf-8")
         self.assertIn("confluence_page_id:", updated)
         self.assertIn("confluence_url:", updated)
+
+    def test_apply_creates_unpublished_confluence_parent_before_child(self):
+        parent = self.repo / "documents" / "parent.md"
+        child = parent.with_suffix("") / "child.md"
+        child.parent.mkdir()
+        parent.write_text(
+            "---\ngtd_id: parent\nkind: document\ntitle: Parent\npublish_confluence: true\nconfluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n# Parent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\ngtd_id: child\nkind: document\ntitle: Child\npublish_confluence: true\nconfluence_space_id: space-1\nconfluence_space_key: DOC\nconfluence_parent_path: documents/parent.md\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        adapter = MemoryAdapter()
+
+        apply_plan(self.repo, plan, adapter)
+
+        child_record = next(
+            record
+            for record in adapter.records.values()
+            if record["payload"]["title"] == "Child"
+        )
+        parent_record = next(
+            record
+            for record in adapter.records.values()
+            if record["payload"]["title"] == "Parent"
+        )
+        self.assertEqual(child_record["payload"]["parent_id"], parent_record["url"].rsplit("/", 1)[-1])
+        self.assertIn(
+            "confluence_parent_id: 'MEM-1'",
+            child.read_text(encoding="utf-8"),
+        )
+
+    def test_apply_rejects_unresolved_confluence_parent_before_child_write(self):
+        child = self.repo / "documents" / "child.md"
+        child.write_text(
+            "---\ngtd_id: child\nkind: document\ntitle: Child\npublish_confluence: true\nconfluence_space_id: space-1\nconfluence_space_key: DOC\nconfluence_parent_path: documents/missing.md\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        adapter = MemoryAdapter()
+
+        with self.assertRaisesRegex(SyncError, "parent page is unresolved"):
+            apply_plan(self.repo, plan, adapter)
+        self.assertEqual(adapter.records, {})
+
+    def test_explicit_parent_path_never_falls_back_to_default_parent(self):
+        child = self.repo / "documents" / "child.md"
+        child.write_text(
+            "---\ngtd_id: child\nkind: document\ntitle: Child\npublish_confluence: true\nconfluence_space_id: space-1\nconfluence_space_key: DOC\nconfluence_parent_path: documents/missing.md\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+        with patch.dict(
+            os.environ, {"CONFLUENCE_PARENT_ID": "default-parent"}, clear=False
+        ):
+            plan = create_plan(self.repo)
+        with self.assertRaisesRegex(SyncError, "parent page is unresolved"):
+            apply_plan(self.repo, plan, MemoryAdapter())
+
+    def test_explicit_parent_paths_are_applied_in_dependency_order(self):
+        parent = self.repo / "documents" / "parent.md"
+        child = self.repo / "documents" / "child.md"
+        parent.write_text(
+            "---\nkind: document\ntitle: Parent\npublish_confluence: true\n---\n\n# Parent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\nkind: document\ntitle: Child\npublish_confluence: true\nconfluence_parent_path: documents/parent.md\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        self.assertEqual(
+            [action["path"] for action in plan["actions"]],
+            ["documents/parent.md", "documents/child.md"],
+        )
+
+    def test_cyclic_confluence_parent_paths_are_rejected(self):
+        for name, parent_path in (("a", "documents/b.md"), ("b", "documents/a.md")):
+            (self.repo / "documents" / (name + ".md")).write_text(
+                "---\nkind: document\ntitle: {}\npublish_confluence: true\nconfluence_parent_path: {}\n---\n\n# {}\n".format(
+                    name, parent_path, name
+                ),
+                encoding="utf-8",
+            )
+        with self.assertRaisesRegex(SyncError, "cyclic Confluence"):
+            create_plan(self.repo)
+
+    def test_plan_infers_document_parent_from_recursive_path(self):
+        parent = self.repo / "documents" / "parent.md"
+        child = parent.with_suffix("") / "child.md"
+        child.parent.mkdir()
+        parent.write_text(
+            "---\nkind: document\ntitle: Parent\npublish_confluence: true\n---\n\n# Parent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\nkind: document\ntitle: Child\npublish_confluence: true\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+
+        plan = create_plan(self.repo)
+
+        child_action = next(
+            action for action in plan["actions"] if action["path"] == "documents/parent/child.md"
+        )
+        self.assertEqual(child_action["parent_path"], "documents/parent.md")
 
     def test_stale_plan_is_rejected(self):
         path = self.repo / "documents" / "guide.md"
@@ -171,6 +279,37 @@ Objective.
         self.assertEqual(payload["progress_comment_field"], "customfield_12345")
         self.assertIn("2026-08-23", payload["progress_comment"])
 
+    def test_sync_payload_uses_environment_defaults_for_missing_front_matter(self):
+        jira = self.repo / "gtd_tasks" / "task.md"
+        jira.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Task\npublish_jira: true\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        document = self.repo / "documents" / "guide.md"
+        document.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        defaults = {
+            "JIRA_PROJECT": "LCL",
+            "JIRA_ISSUE_TYPE": "Story",
+            "JIRA_PROGRESS_COMMENT_FIELD": "customfield_progress",
+            "CONFLUENCE_SPACE_ID": "space-local",
+            "CONFLUENCE_SPACE_KEY": "DOCS",
+            "CONFLUENCE_PARENT_ID": "parent-local",
+        }
+        with patch.dict(os.environ, defaults, clear=False):
+            plan = create_plan(self.repo)
+        by_kind = {action["kind"]: action["payload"] for action in plan["actions"]}
+        self.assertEqual(by_kind["jira"]["project"], "LCL")
+        self.assertEqual(by_kind["jira"]["issue_type"], "Story")
+        self.assertEqual(
+            by_kind["jira"]["progress_comment_field"], "customfield_progress"
+        )
+        self.assertEqual(by_kind["confluence"]["space_id"], "space-local")
+        self.assertEqual(by_kind["confluence"]["space_key"], "DOCS")
+        self.assertEqual(by_kind["confluence"]["parent_id"], "parent-local")
+
     def test_sync_status_reports_local_state(self):
         plans = self.repo / ".jobutils" / "sync" / "plans"
         bases = self.repo / ".jobutils" / "sync" / "bases"
@@ -254,6 +393,29 @@ Objective.
 
         with self.assertRaisesRegex(SyncError, "invalid structure"):
             apply_plan(self.repo, plan, MemoryAdapter())
+
+    def test_sync_status_ignores_symlinked_plans(self):
+        plans = self.repo / ".jobutils" / "sync" / "plans"
+        plans.mkdir(parents=True)
+        target = plans / "real.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "plan_id": "real",
+                    "created_at": "2026-08-25T10:00:00Z",
+                    "source_hash": "0" * 64,
+                    "actions": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        try:
+            (plans / "link.json").symlink_to(target)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks are not available")
+        status = sync_status(self.repo)
+        self.assertEqual(status["plan_count"], 1)
+        self.assertEqual(status["latest_plan"], ".jobutils/sync/plans/real.json")
 
 
 if __name__ == "__main__":

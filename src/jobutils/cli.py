@@ -14,6 +14,7 @@ from .gtd import (
     DocumentError,
     DispatchError,
     create_document,
+    create_subdocument,
     create_subtask,
     create_task,
     dispatch,
@@ -57,6 +58,10 @@ def _parser() -> argparse.ArgumentParser:
     document_parser.add_argument("--repo", default=".")
     document_parser.add_argument("--docs-file", default=None)
     document_parser.add_argument("--line", type=int, required=True)
+    subdocument_parser = gtd_subparsers.add_parser("subdocument")
+    subdocument_parser.add_argument("--repo", default=".")
+    subdocument_parser.add_argument("--parent", required=True)
+    subdocument_parser.add_argument("--line", type=int, required=True)
     metrics = subparsers.add_parser("metrics")
     metrics_subparsers = metrics.add_subparsers(dest="operation")
     report_parser = metrics_subparsers.add_parser("report")
@@ -167,6 +172,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Active hours: {:.2f}".format(summary["active_seconds"] / 3600.0))
         print("Waiting hours: {:.2f}".format(summary["waiting_seconds"] / 3600.0))
         print("Scheduled hours: {:.2f}".format(summary["scheduled_seconds"] / 3600.0))
+        print("Lead hours: {:.2f}".format(summary["lead_seconds"] / 3600.0))
+        print("Cycle hours: {:.2f}".format(summary["cycle_seconds"] / 3600.0))
+        print(
+            "Top tags: {}".format(
+                ", ".join(
+                    sorted(
+                        summary["by_tag"],
+                        key=lambda tag: summary["by_tag"][tag]["task_count"],
+                        reverse=True,
+                    )[:5]
+                )
+                or "none"
+            )
+        )
         print("Data errors: {}".format(len(summary["read_errors"])))
         return 1 if summary["read_errors"] else 0
     if args.domain == "sync" and args.operation == "plan":
@@ -239,6 +258,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "task",
         "subtask",
         "document",
+        "subdocument",
         ):
         _parser().print_help()
         return 2
@@ -265,9 +285,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(str(create_task(repo, args.line, gtd_path, args.parent)))
         elif args.operation == "subtask":
             print(str(create_subtask(repo, args.parent, args.line)))
-        else:
+        elif args.operation == "document":
             docs_path = Path(args.docs_file) if args.docs_file else repo / "docs.md"
             print(str(create_document(repo, args.line, docs_path)))
+        else:
+            print(str(create_subdocument(repo, args.parent, args.line)))
         return 0
     except (DispatchError, DocumentError) as error:
         if args.operation == "dispatch":
@@ -276,6 +298,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("GTD: task failed", file=sys.stderr)
         elif args.operation == "subtask":
             print("GTD: subtask failed", file=sys.stderr)
+        elif args.operation == "subdocument":
+            print("GTD: subdocument failed", file=sys.stderr)
         else:
             print("GTD: document failed", file=sys.stderr)
         print(str(error), file=sys.stderr)
