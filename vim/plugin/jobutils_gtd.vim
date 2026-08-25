@@ -14,8 +14,6 @@ command! GtdMetricsHelp call jobutils#gtd#metrics_help()
 command! GtdTaskHelp call jobutils#gtd#task_help()
 command! GtdDocHelp call jobutils#gtd#doc_help()
 command! GtdReview call jobutils#gtd#review()
-command! GtdStart call jobutils#gtd#work_start()
-command! GtdStop call jobutils#gtd#work_stop()
 command! GtdSyncPlan call jobutils#gtd#sync_plan()
 command! -nargs=? GtdSyncApply call jobutils#gtd#sync_apply(<q-args>)
 command! GtdSyncPull call jobutils#gtd#sync_pull()
@@ -23,7 +21,6 @@ command! GtdSyncStatus call jobutils#gtd#sync_status()
 command! -nargs=? GtdSyncRebind call jobutils#gtd#sync_rebind(<q-args>)
 command! GtdSyncCheck call jobutils#gtd#sync_check()
 command! GtdSyncHelp call jobutils#gtd#sync_help()
-command! -nargs=* GtdGitPush call jobutils#gtd#git_push(<q-args>)
 
 augroup jobutils_gtd_detail_links
   autocmd!
@@ -53,10 +50,6 @@ cnoreabbrev <expr> gtddochelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtddochelp' ? 'GtdDocHelp' : 'gtddochelp'
 cnoreabbrev <expr> gtdreview
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdreview' ? 'GtdReview' : 'gtdreview'
-cnoreabbrev <expr> gtdstart
-      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdstart' ? 'GtdStart' : 'gtdstart'
-cnoreabbrev <expr> gtdstop
-      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdstop' ? 'GtdStop' : 'gtdstop'
 cnoreabbrev <expr> gtdsyncplan
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncplan' ? 'GtdSyncPlan' : 'gtdsyncplan'
 cnoreabbrev <expr> gtdsyncapply
@@ -71,5 +64,3 @@ cnoreabbrev <expr> gtdsynccheck
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynccheck' ? 'GtdSyncCheck' : 'gtdsynccheck'
 cnoreabbrev <expr> gtdsynchelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynchelp' ? 'GtdSyncHelp' : 'gtdsynchelp'
-cnoreabbrev <expr> gtdgitpush
-      \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdgitpush\%([[:space:]]\|$\)' ? 'GtdGitPush' : 'gtdgitpush'

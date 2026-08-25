@@ -187,6 +187,60 @@ def push(
     }
 
 
+def pull(
+    repo_root: Path,
+    remote: str = "origin",
+    branch: str = "",
+) -> Dict[str, object]:
+    """Fast-forward a clean local branch from its configured Git remote."""
+
+    repo_root = Path(repo_root).resolve()
+    if status(repo_root).strip():
+        raise GitOperationError("working tree must be clean before pull")
+    selected_remote = _validate_git_argument(remote, "remote")
+    remote_result = _run(repo_root, ["remote", "get-url", selected_remote])
+    if remote_result.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                remote_result.stderr.strip() or "configured remote was not found"
+            )
+        )
+    current_branch = _run(repo_root, ["branch", "--show-current"])
+    if current_branch.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                current_branch.stderr.strip() or "could not determine branch"
+            )
+        )
+    selected_branch = _validate_git_argument(
+        branch or current_branch.stdout.strip(), "branch"
+    )
+    result = _run(
+        repo_root,
+        ["pull", "--ff-only", selected_remote, selected_branch],
+    )
+    if result.returncode:
+        raise GitOperationError(
+            _redact_git_output(result.stderr.strip() or "git pull failed")
+        )
+    revision = _run(repo_root, ["rev-parse", "HEAD"])
+    if revision.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                revision.stderr.strip() or "could not determine revision"
+            )
+        )
+    return {
+        "performed": True,
+        "remote": selected_remote,
+        "branch": selected_branch,
+        "revision": revision.stdout.strip(),
+        "output": _redact_git_output(
+            "\n".join(value for value in (result.stdout, result.stderr) if value)
+        ).strip(),
+    }
+
+
 def push_mock(
     repo_root: Path,
     remote: str = "mock-origin",

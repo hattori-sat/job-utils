@@ -65,16 +65,6 @@ function! s:run_metrics(args) abort
   return {'ok': v:shell_error == 0, 'output': l:output}
 endfunction
 
-function! s:current_gtd_id() abort
-  for l:index in range(1, min([line('$'), 40]))
-    if getline(l:index) =~# '^gtd_id:'
-      let l:value = substitute(getline(l:index), '^gtd_id:\s*', '', '')
-      return substitute(l:value, "['\"]", '', 'g')
-    endif
-  endfor
-  return ''
-endfunction
-
 function! s:show_error(output, fallback) abort
   echoerr a:fallback
   for l:line in split(a:output, '\n')
@@ -378,39 +368,10 @@ endfunction
 
 function! jobutils#gtd#metrics_help() abort
   echo ':GtdReview  show the current-year task time summary'
-  echo ':GtdStart   record explicit work start for the current task'
-  echo ':GtdStop    record explicit work stop for the current task'
+  echo 'Active, waiting, and scheduled time are recorded by :Gtd state transitions.'
   echo ':GtdTags    show the standard tag catalog'
   echo ':GtdImpactLevels  show impact levels'
   echo ':GtdMetricsHelp  show these commands'
-endfunction
-
-function! jobutils#gtd#work_start() abort
-  let l:gtd_id = s:current_gtd_id()
-  if empty(l:gtd_id)
-    echoerr 'GTD: current file has no gtd_id'
-    return
-  endif
-  let l:result = s:run_metrics('start --gtd-id ' . shellescape(l:gtd_id))
-  if !l:result.ok
-    call s:show_error(l:result.output, 'GTD: work start failed')
-    return
-  endif
-  echo 'GTD: work started'
-endfunction
-
-function! jobutils#gtd#work_stop() abort
-  let l:gtd_id = s:current_gtd_id()
-  if empty(l:gtd_id)
-    echoerr 'GTD: current file has no gtd_id'
-    return
-  endif
-  let l:result = s:run_metrics('stop --gtd-id ' . shellescape(l:gtd_id))
-  if !l:result.ok
-    call s:show_error(l:result.output, 'GTD: work stop failed')
-    return
-  endif
-  echo 'GTD: work stopped'
 endfunction
 
 function! jobutils#gtd#task_help() abort
@@ -481,39 +442,8 @@ function! jobutils#gtd#sync_apply(plan) abort
   echo 'GTD: sync apply, commit, and push completed'
 endfunction
 
-function! jobutils#gtd#git_push(arguments) abort
-  let l:tokens = split(a:arguments)
-  if len(l:tokens) > 2
-    echoerr 'GTD: usage: :GtdGitPush [remote] [branch]'
-    return
-  endif
-  if exists('g:jobutils_git_push_confirm')
-    let l:answer = g:jobutils_git_push_confirm
-  else
-    let l:answer = input('Push committed GTD changes? (P)ush/(C)ancel: ')
-  endif
-  if toupper(strpart(substitute(l:answer, '^\s*', '', ''), 0, 1)) !=# 'P'
-    echom 'GTD: git push cancelled'
-    return
-  endif
-  let l:args = 'git push'
-  if len(l:tokens) >= 1
-    let l:args .= ' --remote ' . shellescape(l:tokens[0])
-  endif
-  if len(l:tokens) == 2
-    let l:args .= ' --branch ' . shellescape(l:tokens[1])
-  endif
-  let l:result = s:run_cli(l:args)
-  if !l:result.ok
-    call s:show_error(l:result.output, 'GTD: git push failed')
-    return
-  endif
-  call s:show_output(l:result.output)
-  echo 'GTD: git push completed'
-endfunction
-
 function! jobutils#gtd#sync_pull() abort
-  if !s:confirm_sync('Pull external changes? (Y)es/(N)o: ', 'Y')
+  if !s:confirm_sync('Synchronize Git and external changes? (Y)es/(N)o: ', 'Y')
     echom 'GTD: sync pull cancelled'
     return
   endif
@@ -523,7 +453,7 @@ function! jobutils#gtd#sync_pull() abort
     return
   endif
   call s:show_output(l:result.output)
-  echo 'GTD: sync pull completed'
+  echo 'GTD: Git and Jira/Confluence synchronization completed'
 endfunction
 
 function! jobutils#gtd#sync_status() abort
@@ -594,10 +524,10 @@ endfunction
 function! jobutils#gtd#sync_help() abort
   echo ':GtdSyncPlan              create a reviewable synchronization plan'
   echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
-  echo ':GtdSyncPull              pull external changes after confirmation'
+  echo ':GtdSyncPull              synchronize Git and external changes'
   echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
   echo ':GtdSyncRebind [path]     update a stored Jira/Confluence identity locally'
   echo ':GtdSyncCheck             inspect external drift without changing files'
-  echo ':GtdGitPush [remote] [branch] push committed Markdown changes to Git'
+  echo 'GtdSyncPull owns both Git and Jira/Confluence synchronization.'
   echo ':GtdSyncHelp              show synchronization commands'
 endfunction

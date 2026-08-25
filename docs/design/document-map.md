@@ -20,6 +20,7 @@ job-utils/
 │   ├── research/
 │   ├── requirements/
 │   ├── setup/
+│   ├── usage/
 │   └── skills/
 └── spec/
     ├── gtd/
@@ -37,6 +38,7 @@ job-utils/
 - `spec/`: short normative specifications that implementation must satisfy.
 - `docs/agent/`: shared guidance for coding agents and maintainers.
 - `docs/setup/`: cross-platform setup and configuration examples.
+- `docs/usage/`: the normal daily workflow for GTD movement and synchronization.
 - `docs/skills/`: maintained AI skill catalog without auto-installation.
 - `skills/`: implementation resources for job-utils skill development.
 - `spec/git/`: local Git commit, real push, and push-simulation behavior.

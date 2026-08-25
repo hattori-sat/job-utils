@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+import subprocess
 
 import sys
 import os
@@ -78,6 +79,26 @@ class SetupProfileTests(unittest.TestCase):
             self.assertNotIn("# <<< job-utils setup <<<", content)
             self.assertIn('" >>> job-utils setup >>>', content)
 
+    def test_vimrc_registration_repairs_malformed_legacy_markers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vimrc = root / ".vimrc"
+            vimrc.write_text(
+                ">>> job-utils setup >>>: # >>> job-utils setup >>>\n"
+                "execute 'source ' . fnameescape('/old/snippet.vim')\n"
+                "<<< job-utils setup <<<: # <<< job-utils setup <<<\n",
+                encoding="utf-8",
+            )
+
+            ensure_vimrc_registration(
+                vimrc, root / "vim-config.vim", "/opt/job-utils/.venv/bin/python"
+            )
+
+            content = vimrc.read_text(encoding="utf-8")
+            self.assertNotIn(">>> job-utils setup >>>:", content)
+            self.assertNotIn("<<< job-utils setup <<<:", content)
+            self.assertIn('" >>> job-utils setup >>>', content)
+
     def test_user_wrappers_use_the_job_utils_virtual_environment(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -88,7 +109,47 @@ class SetupProfileTests(unittest.TestCase):
             )
             self.assertIn(str(root / ".venv"), paths["jobutils"].read_text())
             self.assertIn(str(root / ".venv" / "bin" / "python"), paths["jobutils"].read_text())
+            vim_wrapper = paths["jobutils-vim"].read_text()
+            self.assertIn('GTD_ROOT', vim_wrapper)
+            self.assertIn('gtd.md', vim_wrapper)
+            self.assertIn('if [ "$#" -eq 0 ]', vim_wrapper)
             self.assertTrue(paths["jobutils"].stat().st_mode & 0o111)
+            configured_repo = root / "gtd"
+            paths = install_user_wrappers(root, bin_dir, "posix", configured_repo)
+            self.assertIn(
+                "JOBUTILS_CONFIGURED_GTD_ROOT='{}'".format(configured_repo.resolve()),
+                paths["jobutils-vim"].read_text(),
+            )
+
+    def test_generated_vim_wrapper_opens_configured_gtd_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gtd_repo = root / "gtd"
+            gtd_repo.mkdir()
+            (gtd_repo / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            fake_bin = root / "fake-bin"
+            fake_bin.mkdir()
+            capture = root / "vim-args"
+            fake_vim = fake_bin / "vim"
+            fake_vim.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$JOBUTILS_CAPTURE\"\n",
+                encoding="utf-8",
+            )
+            fake_vim.chmod(0o755)
+            wrapper = install_user_wrappers(
+                root, root / "bin", "posix", gtd_repo
+            )["jobutils-vim"]
+            environment = dict(os.environ)
+            environment["PATH"] = str(fake_bin)
+            environment["JOBUTILS_CAPTURE"] = str(capture)
+            result = subprocess.run(
+                [str(wrapper)], env=environment, check=False
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                capture.read_text(encoding="utf-8").strip(),
+                str((gtd_repo / "gtd.md").resolve()),
+            )
 
     def test_existing_unmanaged_wrapper_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -114,6 +175,15 @@ class SetupProfileTests(unittest.TestCase):
             self.assertNotIn(
                 str(root / "Scripts" / "Activate.ps1").replace("/", "\\"), content
             )
+
+    def test_windows_vim_wrapper_opens_gtd_root_when_no_file_is_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = install_user_wrappers(root, root / "bin", "windows")
+            content = paths["jobutils-vim"].read_text()
+            self.assertIn("GTD_ROOT", content)
+            self.assertIn("gtd.md", content)
+            self.assertIn('if "%~1"==""', content)
 
     def test_local_env_loader_does_not_override_process_values(self):
         with tempfile.TemporaryDirectory() as directory:

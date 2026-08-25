@@ -1,6 +1,3 @@
-import contextlib
-import io
-import json
 import subprocess
 import sys
 import tempfile
@@ -9,8 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.gitops import GitOperationError, commit, push, push_mock, status
-from jobutils.cli import main
+from jobutils.gitops import GitOperationError, commit, pull, push, push_mock, status
 
 
 class GitOpsTests(unittest.TestCase):
@@ -103,44 +99,46 @@ class GitOpsTests(unittest.TestCase):
         )
         self.assertEqual(refs, "")
 
-    def test_cli_exposes_local_commit_and_push_simulation(self):
-        (self.repo / "note.md").write_text("local\n", encoding="utf-8")
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            self.assertEqual(
-                main(
-                    [
-                        "git",
-                        "commit",
-                        "--repo",
-                        str(self.repo),
-                        "--message",
-                        "test: cli commit",
-                    ]
-                ),
-                0,
-            )
-        revision = json.loads(output.getvalue())["revision"]
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            self.assertEqual(
-                main(
-                    [
-                        "git",
-                        "push-mock",
-                        "--repo",
-                        str(self.repo),
-                        "--remote-url",
-                        "mock://github/test",
-                    ]
-                ),
-                0,
-            )
-        pushed = json.loads(output.getvalue())
-        self.assertEqual(pushed["revision"], revision)
-        self.assertFalse(pushed["performed"])
+    def test_pull_fast_forwards_from_configured_remote(self):
+        infrastructure = tempfile.TemporaryDirectory()
+        self.addCleanup(infrastructure.cleanup)
+        infrastructure_root = Path(infrastructure.name)
+        remote = infrastructure_root / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("initial\n", encoding="utf-8")
+        commit(self.repo, "test: seed pull repository")
+        push(self.repo)
 
-    def test_cli_exposes_real_push(self):
+        peer = infrastructure_root / "peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "peer@example.invalid"],
+            cwd=peer,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Peer Test"], cwd=peer, check=True
+        )
+        (peer / "remote.md").write_text("remote\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: add remote note"], cwd=peer, check=True
+        )
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        self.assertEqual(status(self.repo), "")
+        result = pull(self.repo)
+
+        self.assertTrue(result["performed"])
+        self.assertTrue((self.repo / "remote.md").is_file())
+        self.assertEqual(status(self.repo), "")
+
+    def test_pull_rejects_dirty_worktree(self):
         remote = Path(self.tempdir.name) / "remote.git"
         subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
         subprocess.run(
@@ -149,16 +147,10 @@ class GitOpsTests(unittest.TestCase):
             check=True,
         )
         (self.repo / "note.md").write_text("local\n", encoding="utf-8")
-        committed = commit(self.repo, "test: prepare cli push")
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            self.assertEqual(
-                main(["git", "push", "--repo", str(self.repo)]),
-                0,
-            )
-        pushed = json.loads(output.getvalue())
-        self.assertTrue(pushed["performed"])
-        self.assertEqual(pushed["revision"], committed["revision"])
+
+        with self.assertRaisesRegex(GitOperationError, "clean"):
+            pull(self.repo)
+
 
 
 if __name__ == "__main__":

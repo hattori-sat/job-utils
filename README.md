@@ -10,6 +10,7 @@ document pages, and `.jobutils/` runtime data.
 ## Documentation
 
 - [Setup guide](docs/setup/README.md)
+- [Usage guide](docs/usage/README.md)
 - [Requirements](docs/requirements/overview.md)
 - [Document map](docs/design/document-map.md)
 - [Implementation roadmap](docs/design/implementation-roadmap.md)

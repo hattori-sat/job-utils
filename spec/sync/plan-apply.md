@@ -41,9 +41,10 @@ front matter; credentials are never written.
 
 For the Atlassian adapter, `sync apply` also commits the generated Markdown
 and `.jobutils` synchronization state and performs a real Git push to the
-configured remote. The command requires a clean worktree before the external
-request and stops with the local commit preserved if the push fails. The
-`--no-git-sync` option is available for tests and controlled recovery.
+configured remote. If the worktree has pending changes, the command first
+commits them locally after the normal credential-path checks, then performs
+the external request. It stops with local commits preserved if the push fails.
+The `--no-git-sync` option is available for tests and controlled recovery.
 
 Confluence actions include a local `parent_path` when a child document has a
 parent Markdown file. Apply orders parent actions before children and passes a
@@ -69,15 +70,23 @@ local plan.
 
 ## Pull and conflicts
 
-`sync pull` reads external content and compares it with the last synchronized
-public Markdown body. If only one side changed, that side is accepted. If both
-local and external content changed, the public body receives standard conflict
-markers (`<<<<<<< local`, `=======`, `>>>>>>> external`) and the command
-reports a conflict without silently choosing a side. The local Implementation
-Note is preserved below the merged public body. Remote Jira title, issue type,
-parent key, and configured Progress Comment values are materialized in the
-Markdown representation after a clean pull. Pulls and conflicts are recorded
-as `sync_pulled` and `sync_conflict` events.
+`sync pull` is the single inbound synchronization operation. It first runs a
+fast-forward-only Git pull from the configured remote. If the working tree is
+dirty or the branch has diverged, it stops before contacting Jira or
+Confluence. After Git succeeds, it reads external content and compares it with
+the last synchronized public Markdown body. If only one side changed, that
+side is accepted. If both local and external content changed, the public body
+receives standard conflict markers (`<<<<<<< local`, `=======`, `>>>>>>> external`)
+and the command reports a conflict without silently choosing a side. The local
+Implementation Note is preserved below the merged public body. Remote Jira
+title, issue type, parent key, and configured Progress Comment values are
+materialized in the Markdown representation after a clean pull.
+
+When the external import changes the working tree, `sync pull` commits the
+Markdown and synchronization events and pushes that commit to the configured
+Git remote. Pulls and conflicts are recorded as `sync_pulled` and
+`sync_conflict` events. Separate Git pull and push commands are not part of the
+normal user workflow.
 
 ## Rendering rules
 

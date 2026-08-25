@@ -18,4 +18,11 @@ if ! command -v vim >/dev/null 2>&1; then
   echo "jobutils-vim: Vim was not found" >&2
   exit 127
 fi
+if [ "$#" -eq 0 ]; then
+  if [ -n "${GTD_ROOT:-}" ] && [ -f "$GTD_ROOT/gtd.md" ]; then
+    set -- "$GTD_ROOT/gtd.md"
+  elif [ -f "gtd.md" ]; then
+    set -- "gtd.md"
+  fi
+fi
 exec vim "$@"

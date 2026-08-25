@@ -38,6 +38,8 @@ endif
 if get(g:, 'jobutils_enable_filetype_defaults', 1)
   augroup jobutils_filetype_defaults
     autocmd!
+    " The built-in Markdown syntax marks snake_case underscores as errors.
+    autocmd Syntax markdown highlight! link markdownError Normal
     autocmd FileType markdown setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
           \ formatoptions+=croln
           \ comments=b:*,b:-,b:+,n:>
