@@ -24,7 +24,6 @@ job-utils/
 └── spec/
     ├── gtd/
     ├── git/
-    ├── server/
     ├── sync/
     └── vim/
 ```
@@ -40,8 +39,7 @@ job-utils/
 - `docs/setup/`: cross-platform setup and configuration examples.
 - `docs/skills/`: maintained AI skill catalog without auto-installation.
 - `skills/`: implementation resources for job-utils skill development.
-- `spec/git/`: local Git commit and push-simulation behavior.
-- `spec/server/`: the localhost-only HTTP interface.
+- `spec/git/`: local Git commit, real push, and push-simulation behavior.
 
 ## Separate GTD Repository
 
