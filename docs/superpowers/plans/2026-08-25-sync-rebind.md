@@ -90,4 +90,4 @@
 - [x] Run the complete test suite and `git diff --check`.
 - [x] Scan the public diff for credentials, real Atlassian identifiers, local user paths, generated output, and production-process residue.
 - [x] Request code review and resolve all Critical/Important findings.
-- [ ] Commit the final documentation/review changes, push only `codex/pr-sync-rebind`, and open one PR against `main`; do not merge it.
+- [x] Commit the final documentation/review changes, push only `codex/pr-sync-rebind`, and open one PR against `main`; do not merge it.
