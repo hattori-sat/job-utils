@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from jobutils.gtd import frontmatter
 
@@ -111,9 +111,9 @@ def public_markdown_links(body: str, published: Dict[str, str]) -> str:
         target = match.group(2)
         external = published.get(target)
         if external and _is_safe_url(external):
-            return "{}({})".format(match.group(1), external)
+            return "{}({})".format(match.group(1), _markdown_destination(external))
         if _is_safe_url(target):
-            return match.group(0)
+            return "{}({})".format(match.group(1), _markdown_destination(target))
         if match.group(1).startswith("!"):
             return match.group(1)
         return match.group(1)
@@ -143,7 +143,7 @@ def _is_safe_url(target: object, allow_attachment: bool = False) -> bool:
         parsed = urlparse(target)
     except ValueError:
         return False
-    if any(char in target for char in "()[]\\\r\n\t "):
+    if any(char in target for char in "\r\n\t"):
         return False
     scheme = parsed.scheme.lower()
     if scheme in ("http", "https"):
@@ -166,6 +166,12 @@ def _escape_markdown_text(value: str) -> str:
 
     escaped_html = html.escape(value, quote=False)
     return re.sub(r"([\\\[\]\(\)!])", r"\\\1", escaped_html)
+
+
+def _markdown_destination(target: str) -> str:
+    """Encode destination characters that can terminate Markdown links."""
+
+    return quote(target, safe=":/?#@!$&'*+,;=%-._~[]")
 
 
 def _table_cells(line: str) -> List[str]:
@@ -465,7 +471,11 @@ def _storage_inline(node: object) -> str:
     if node.tag == "a":
         label = "".join(_storage_inline(child) for child in node.children)
         target = node.attrs.get("href", "")
-        return "[{}]({})".format(label, target) if _is_safe_url(target) else label
+        return (
+            "[{}]({})".format(label, _markdown_destination(target))
+            if _is_safe_url(target)
+            else label
+        )
     if node.tag == "ac:image":
         target_nodes = _find_nodes(node, "ri:url")
         target = target_nodes[0].attrs.get("ri:value", "") if target_nodes else ""
@@ -671,7 +681,7 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
             alt = _escape_markdown_text(attrs.get("alt", ""))
             target = attrs.get("url", "")
             output.append(
-                "![{}]({})".format(alt, target)
+                "![{}]({})".format(alt, _markdown_destination(target))
                 if _is_safe_url(target, allow_attachment=True)
                 else alt
             )
@@ -679,7 +689,11 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
         text = _escape_markdown_text(item.get("text", ""))
         marks = item.get("marks", []) or []
         link = next((mark.get("attrs", {}).get("href") for mark in marks if mark.get("type") == "link"), None)
-        output.append("[{}]({})".format(text, link) if link and _is_safe_url(link) else text)
+        output.append(
+            "[{}]({})".format(text, _markdown_destination(link))
+            if link and _is_safe_url(link)
+            else text
+        )
     return "".join(output)
 
 

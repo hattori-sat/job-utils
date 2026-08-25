@@ -55,12 +55,11 @@ Useful **context**.
         self.assertNotIn("javascript:", rendered)
         self.assertNotIn('href="javascript:', rendered)
         self.assertNotIn("attachment:../../secret", rendered)
-        self.assertNotIn(
-            "javascript:",
-            storage_to_markdown(
-                '<p><a href="https://example.com/) [evil](javascript:alert(1))">unsafe</a></p>'
-            ),
+        escaped_url = storage_to_markdown(
+            '<p><a href="https://example.com/) [evil](javascript:alert(1))">unsafe</a></p>'
         )
+        self.assertNotIn("](javascript:", escaped_url)
+        self.assertIn("%29%20[evil]%28javascript:alert%281%29%29", escaped_url)
 
         markdown = storage_to_markdown(
             '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
