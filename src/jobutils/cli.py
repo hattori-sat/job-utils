@@ -27,6 +27,7 @@ from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
 from .sync.engine import (
     SyncError,
     apply_plan,
+    check,
     create_plan,
     pull,
     rebind,
@@ -90,6 +91,11 @@ def _parser() -> argparse.ArgumentParser:
     pull_parser = sync_subparsers.add_parser("pull")
     pull_parser.add_argument("--repo", default=".")
     pull_parser.add_argument(
+        "--adapter", choices=("memory", "atlassian"), default="atlassian"
+    )
+    check_parser = sync_subparsers.add_parser("check")
+    check_parser.add_argument("--repo", default=".")
+    check_parser.add_argument(
         "--adapter", choices=("memory", "atlassian"), default="atlassian"
     )
     rebind_parser = sync_subparsers.add_parser("rebind")
@@ -275,6 +281,33 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         except (OSError, SyncError, ValueError) as error:
             print("SYNC: rebind failed: {}".format(error), file=sys.stderr)
+            return 1
+    if args.domain == "sync" and args.operation == "check":
+        try:
+            if args.adapter == "memory":
+                adapter = MemoryAdapter()
+            else:
+                adapter = AtlassianHttpAdapter(
+                    {
+                        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+                        "confluence_base_url": os.environ.get(
+                            "CONFLUENCE_BASE_URL", ""
+                        ),
+                    }
+                )
+            result = check(Path(args.repo), adapter)
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            if result["error_count"]:
+                print(
+                    "SYNC: check failed: {} item(s) could not be checked".format(
+                        result["error_count"]
+                    ),
+                    file=sys.stderr,
+                )
+                return 1
+            return 0
+        except (OSError, ValueError, SyncError, RuntimeError, KeyError) as error:
+            print("SYNC: check failed: {}".format(error), file=sys.stderr)
             return 1
     if args.domain != "gtd" or args.operation not in (
         "dispatch",

@@ -111,6 +111,7 @@ Available commands include:
 - `:GtdSyncPull` — pull external changes after confirmation;
 - `:GtdSyncStatus` — show local plans, bases, pending actions, and conflicts;
 - `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
+- `:GtdSyncCheck` — inspect external drift without changing files;
 - `:GtdSyncHelp` — show synchronization commands;
 - `:JobutilsProjectRoot` — show the nearest CMake project root.
 - `:JobutilsCMake` — open the nearest `CMakeLists.txt` in a split.
@@ -167,6 +168,13 @@ publishable Markdown and writes a JSON plan under
 the newest plan when no path is supplied and asks for confirmation before it
 writes to Jira or Confluence. `:GtdSyncPull` also asks for confirmation before
 writing pulled changes into local Markdown.
+
+Use `jobutils sync check --repo /absolute/path/to/your-gtd-repository
+--adapter atlassian` or `:GtdSyncCheck` before planning when you want to see
+whether Jira or Confluence changed outside the Markdown workflow. The check is
+read-only. It reports clean, local-only, external-only, converged, conflict,
+unknown, and per-item error states; use `:GtdSyncPull` only after reviewing
+those results.
 
 If an external Jira issue key or Confluence page ID changes, use the local
 rebind command before creating a new plan:

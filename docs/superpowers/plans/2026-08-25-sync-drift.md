@@ -52,12 +52,12 @@
 - CLI: `jobutils sync check --repo PATH --adapter memory|atlassian`, printing one JSON object.
 - Vim: `:GtdSyncCheck` and `:gtdsynccheck`, displaying the JSON summary in `:messages` without confirmation.
 
-- [ ] Add CLI tests for memory-adapter classification and error exit behavior when any item fails.
-- [ ] Add Vim runtime tests for command registration, lowercase alias, read-only invocation, and message output.
-- [ ] Run the focused CLI/Vim tests and verify the new entry points fail before implementation.
-- [ ] Implement the CLI adapter selection and Vim wrapper through the existing `s:run_cli`, `s:show_output`, and `s:show_error` helpers.
-- [ ] Document the check-before-plan workflow and distinguish it from `sync pull`.
-- [ ] Run all sync and Vim tests and commit as `feat: expose sync drift check`.
+- [x] Add CLI tests for memory-adapter classification and error exit behavior when any item fails.
+- [x] Add Vim runtime tests for command registration, lowercase alias, read-only invocation, and message output.
+- [x] Run the focused CLI/Vim tests and verify the new entry points fail before implementation.
+- [x] Implement the CLI adapter selection and Vim wrapper through the existing `s:run_cli`, `s:show_output`, and `s:show_error` helpers.
+- [x] Document the check-before-plan workflow and distinguish it from `sync pull`.
+- [x] Run all sync and Vim tests and commit as `feat: expose sync drift check`.
 
 ### Task 3: Sanitize, review, and prepare the PR
 

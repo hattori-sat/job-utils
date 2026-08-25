@@ -19,6 +19,7 @@ command! -nargs=? GtdSyncApply call jobutils#gtd#sync_apply(<q-args>)
 command! GtdSyncPull call jobutils#gtd#sync_pull()
 command! GtdSyncStatus call jobutils#gtd#sync_status()
 command! -nargs=? GtdSyncRebind call jobutils#gtd#sync_rebind(<q-args>)
+command! GtdSyncCheck call jobutils#gtd#sync_check()
 command! GtdSyncHelp call jobutils#gtd#sync_help()
 
 augroup jobutils_gtd_detail_links
@@ -59,5 +60,7 @@ cnoreabbrev <expr> gtdsyncstatus
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncstatus' ? 'GtdSyncStatus' : 'gtdsyncstatus'
 cnoreabbrev <expr> gtdsyncrebind
       \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdsyncrebind\%([[:space:]]\|$\)' ? 'GtdSyncRebind' : 'gtdsyncrebind'
+cnoreabbrev <expr> gtdsynccheck
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynccheck' ? 'GtdSyncCheck' : 'gtdsynccheck'
 cnoreabbrev <expr> gtdsynchelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsynchelp' ? 'GtdSyncHelp' : 'gtdsynchelp'

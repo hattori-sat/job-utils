@@ -510,11 +510,22 @@ function! jobutils#gtd#sync_rebind(requested) abort
   echo 'GTD: sync rebind completed; create a new sync plan'
 endfunction
 
+function! jobutils#gtd#sync_check() abort
+  let l:result = s:run_cli('sync check --adapter atlassian')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync check failed')
+    return
+  endif
+  call s:show_output(l:result.output)
+  echo 'GTD: sync check completed'
+endfunction
+
 function! jobutils#gtd#sync_help() abort
   echo ':GtdSyncPlan              create a reviewable synchronization plan'
   echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
   echo ':GtdSyncPull              pull external changes after confirmation'
   echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
   echo ':GtdSyncRebind [path]     update a stored Jira/Confluence identity locally'
+  echo ':GtdSyncCheck             inspect external drift without changing files'
   echo ':GtdSyncHelp              show synchronization commands'
 endfunction

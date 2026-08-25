@@ -35,5 +35,6 @@ Repository remains the source of Markdown data throughout the roadmap.
    - Confluence pages, parent relationships, default values, and recursive
      child creation.
    - Pull, local identity rebind, Jira/Confluence parent dependency resolution,
-     stale-plan detection, and two-sided conflict handling.
+     read-only drift checking, stale-plan detection, and two-sided conflict
+     handling.
    - External IDs, URLs, and clickable local references in Markdown.
