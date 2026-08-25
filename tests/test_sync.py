@@ -16,6 +16,8 @@ from jobutils.sync.adapters import MemoryAdapter
 from jobutils.sync.engine import (
     SyncError,
     apply_plan,
+    check,
+    classify_drift,
     create_plan,
     pull,
     rebind,
@@ -674,6 +676,113 @@ Objective.
 
         with self.assertRaisesRegex(SyncError, "stale"):
             apply_plan(self.repo, plan, MemoryAdapter())
+
+    def test_classify_drift_states(self):
+        cases = (
+            ("base\n", "base\n", "base\n", "clean"),
+            ("base\n", "base\n", "remote\n", "external_changed"),
+            ("base\n", "local\n", "base\n", "local_changed"),
+            ("base\n", "local\n", "remote\n", "conflict"),
+            ("base\n", "same\n", "same\n", "converged"),
+            (None, "local\n", "remote\n", "unknown"),
+        )
+        for base, local, remote, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(classify_drift(base, local, remote), expected)
+
+    def test_check_reports_external_change_without_mutating_repository(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\npublish_confluence: true\nconfluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote\n"
+        )
+        before = path.read_bytes()
+        base_files = {
+            item: item.read_bytes()
+            for item in (self.repo / ".jobutils" / "sync" / "bases").glob("*.md")
+        }
+
+        result = check(self.repo, adapter)
+
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["items"][0]["state"], "external_changed")
+        self.assertEqual(result["items"][0]["path"], "documents/guide.md")
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(
+            {
+                item: item.read_bytes()
+                for item in (self.repo / ".jobutils" / "sync" / "bases").glob("*.md")
+            },
+            base_files,
+        )
+
+    def test_check_isolates_fetch_errors_and_reports_missing_base(self):
+        first = self.repo / "documents" / "first.md"
+        second = self.repo / "documents" / "second.md"
+        first.write_text(
+            "---\nkind: document\ntitle: First\npublish_confluence: true\nconfluence_page_id: MEM-1\n---\n\n# First\n",
+            encoding="utf-8",
+        )
+        second.write_text(
+            "---\nkind: document\ntitle: Second\npublish_confluence: true\nconfluence_page_id: MEM-2\n---\n\n# Second\n",
+            encoding="utf-8",
+        )
+
+        class FetchAdapter(MemoryAdapter):
+            def fetch(self, kind, external_id):
+                if external_id == "MEM-2":
+                    raise RuntimeError("remote unavailable")
+                return super().fetch(kind, external_id)
+
+        adapter = FetchAdapter()
+        adapter.records["MEM-1"] = {
+            "kind": "confluence",
+            "payload": {"title": "First", "storage_body": "<h1>First</h1>"},
+            "url": "https://memory.invalid/confluence/MEM-1",
+        }
+        adapter.records["MEM-2"] = {
+            "kind": "confluence",
+            "payload": {"title": "Second", "storage_body": "<h1>Second</h1>"},
+            "url": "https://memory.invalid/confluence/MEM-2",
+        }
+
+        result = check(self.repo, adapter)
+        by_path = {item["path"]: item for item in result["items"]}
+        self.assertEqual(result["error_count"], 1)
+        self.assertEqual(by_path["documents/first.md"]["state"], "unknown")
+        self.assertEqual(by_path["documents/second.md"]["state"], "error")
+        self.assertIn("remote unavailable", by_path["documents/second.md"]["error"])
+
+    def test_sync_check_cli_returns_json_and_error_status(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\nconfluence_page_id: MEM-1\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        output = io.StringIO()
+        errors = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            result = main(
+                [
+                    "sync",
+                    "check",
+                    "--repo",
+                    str(self.repo),
+                    "--adapter",
+                    "memory",
+                ]
+            )
+
+        self.assertEqual(result, 1)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["checked"], 1)
+        self.assertEqual(payload["items"][0]["state"], "error")
+        self.assertIn("SYNC: check failed", errors.getvalue())
 
     def test_sync_status_ignores_symlinked_plans(self):
         plans = self.repo / ".jobutils" / "sync" / "plans"
