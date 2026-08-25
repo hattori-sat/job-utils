@@ -65,8 +65,8 @@
 - Modify: `docs/design/implementation-roadmap.md`
 - Modify: this plan file
 
-- [ ] Add read-only drift checking to the roadmap and setup guidance.
-- [ ] Run the complete test suite and `git diff --check`.
-- [ ] Scan the public diff for credentials, real Atlassian identifiers, local user paths, generated output, and production-process residue.
-- [ ] Request code review and resolve all Critical/Important findings.
+- [x] Add read-only drift checking to the roadmap and setup guidance.
+- [x] Run the complete test suite and `git diff --check`.
+- [x] Scan the public diff for credentials, real Atlassian identifiers, local user paths, generated output, and production-process residue.
+- [x] Request code review and resolve all Critical/Important findings.
 - [ ] Commit the final documentation state, push only `codex/pr-sync-drift`, and open one PR against `main`; do not merge it.
