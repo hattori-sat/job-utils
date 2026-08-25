@@ -51,6 +51,20 @@ small local defaults:
 The settings live in the job-utils runtime so setup can register them without
 rewriting the user's existing `.vimrc`.
 
+## Clipboard image policy
+
+The classic Vim `:PasteImage` command delegates clipboard access to the shared
+Python CLI. This keeps Vimscript focused on the current buffer and lets the
+Python layer select the platform provider without adding a Vim plugin. The
+image is written below the Markdown file's `assets/` directory and Vim inserts
+an ordinary relative Markdown image link. The command is intentionally local:
+it does not upload to Jira or Confluence and does not perform Git operations.
+
+The provider order is `pngpaste`/`osascript` on macOS, PowerShell on Windows,
+and `wl-paste`/`xclip` on Linux. These tools are optional host capabilities;
+setup reports a missing provider instead of installing it or silently changing
+the user's environment.
+
 ## Project command policy
 
 The project helpers keep external tool invocation explicit and local to the

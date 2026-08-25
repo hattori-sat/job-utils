@@ -878,6 +878,95 @@ private
             self.assertEqual(len(children), 1)
             self.assertIn("confluence_parent_id: 'page-parent'", children[0].read_text())
 
+    def test_paste_image_command_inserts_link_and_creates_asset(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            document = root / "guide.md"
+            document.write_text("# Guide\n", encoding="utf-8")
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            if os.name == "nt":
+                provider = fake_bin / "xclip.cmd"
+                provider.write_text(
+                    "@{} -c \"import sys; sys.stdout.buffer.write(b'PNGDATA')\"\n".format(
+                        sys.executable
+                    ),
+                    encoding="utf-8",
+                )
+            else:
+                provider = fake_bin / "xclip"
+                provider.write_text(
+                    "#!/bin/sh\n"
+                    "printf PNGDATA\n",
+                    encoding="utf-8",
+                )
+                provider.chmod(0o755)
+            commands = root / "paste-image.vim"
+            commands.write_text(
+                "\n".join(
+                    [
+                        "set rtp^={}".format(vim_runtime),
+                        "source {}/plugin/jobutils_markdown.vim".format(vim_runtime),
+                        "let g:jobutils_python='{}'".format(sys.executable),
+                        "let g:jobutils_image_provider='xclip'",
+                        "edit {}".format(document),
+                        "set filetype=markdown",
+                        "PasteImage architecture",
+                        "if getline(2) !~# '^!\\[architecture\\](assets/guide-[0-9a-f]\\{8\\}\\.png)$' | cquit 81 | endif",
+                        "qall!",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [vim, "-Nu", "NONE", "-i", "NONE", "-n", "-es", "-S", str(commands)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={
+                    **os.environ,
+                    "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+                    "PYTHONPATH": str(repository / "src"),
+                },
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            images = list((root / "assets").glob("guide-*.png"))
+            self.assertEqual(len(images), 1)
+            self.assertEqual(images[0].read_bytes(), b"PNGDATA")
+
+    def test_paste_image_commands_are_registered(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        result = subprocess.run(
+            [
+                vim,
+                "-Nu",
+                "NONE",
+                "-n",
+                "-es",
+                "+set rtp^=" + str(vim_runtime),
+                "+source " + str(vim_runtime / "plugin/jobutils_markdown.vim"),
+                "+if exists(':PasteImage') != 2 | cquit 83 | endif",
+                "+let g:jobutils_abbreviations = execute('silent cabbrev')",
+                "+if g:jobutils_abbreviations !~# 'pasteimage' | cquit 84 | endif",
+                "+qa!",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
