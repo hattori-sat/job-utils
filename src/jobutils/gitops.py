@@ -260,7 +260,9 @@ def pull(
     }
 
 
-def fetch(repo_root: Path, remote: str = "origin") -> Dict[str, object]:
+def fetch(
+    repo_root: Path, remote: str = "origin", branch: str = ""
+) -> Dict[str, object]:
     """Refresh remote-tracking data without merging or changing the worktree."""
 
     repo_root = Path(repo_root).resolve()
@@ -280,7 +282,7 @@ def fetch(repo_root: Path, remote: str = "origin") -> Dict[str, object]:
             )
         )
     selected_branch = _validate_git_argument(
-        current_branch.stdout.strip(), "branch"
+        branch or current_branch.stdout.strip(), "branch"
     )
     result = _run(repo_root, ["fetch", "--prune", selected_remote])
     if result.returncode:

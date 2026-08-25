@@ -169,6 +169,28 @@ Private content.
         self.assertTrue(response["git"]["performed"])
         self.assertTrue((repo / "remote.md").is_file())
 
+    def test_cli_sync_update_allows_an_empty_remote(self):
+        repo = Path(self.tempdir.name) / "empty-remote-repo"
+        repo.mkdir()
+        remote = Path(self.tempdir.name) / "empty-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "config", "user.email", "local-test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        (repo / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: seed empty remote repository"], cwd=repo, check=True)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["sync", "update", "--repo", str(repo)])
+
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertEqual(response["git"]["state"], "no_remote")
+        self.assertTrue(response["git"]["skipped"])
+
     def test_cli_sync_apply_rejects_remote_ahead_before_external_apply(self):
         repo = Path(self.tempdir.name) / "stale-apply-repo"
         repo.mkdir()

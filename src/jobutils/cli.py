@@ -309,6 +309,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.domain == "sync" and args.operation == "update":
         try:
+            fetched = git_fetch(
+                Path(args.repo), remote=args.remote, branch=args.branch
+            )
+            if fetched.get("state") == "no_remote":
+                print(
+                    json.dumps(
+                        {"git": dict(fetched, performed=False, skipped="no_remote_branch")},
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
             result = git_pull(
                 Path(args.repo), remote=args.remote, branch=args.branch
             )
