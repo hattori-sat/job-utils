@@ -17,6 +17,8 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn("gtd.md", posix_vim)
         self.assertIn("GTD_ROOT", windows_vim)
         self.assertIn("gtd.md", windows_vim)
+        self.assertIn("sync update", posix_vim)
+        self.assertIn("sync update", windows_vim)
 
 
 if __name__ == "__main__":

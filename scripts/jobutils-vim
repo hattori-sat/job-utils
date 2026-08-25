@@ -18,6 +18,13 @@ if ! command -v vim >/dev/null 2>&1; then
   echo "jobutils-vim: Vim was not found" >&2
   exit 127
 fi
+gtd_root="${GTD_ROOT:-}"
+if [ -z "$gtd_root" ] && [ -f "gtd.md" ]; then
+  gtd_root=$(pwd)
+fi
+if [ -n "$gtd_root" ] && [ -f "$gtd_root/gtd.md" ]; then
+  "$JOB_UTILS_ROOT/.venv/bin/python" -m jobutils sync update --repo "$gtd_root" || exit $?
+fi
 if [ "$#" -eq 0 ]; then
   if [ -n "${GTD_ROOT:-}" ] && [ -f "$GTD_ROOT/gtd.md" ]; then
     set -- "$GTD_ROOT/gtd.md"

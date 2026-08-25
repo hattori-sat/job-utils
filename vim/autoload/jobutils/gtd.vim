@@ -405,6 +405,21 @@ function! jobutils#gtd#review() abort
   echo 'GTD: review displayed in :messages'
 endfunction
 
+function! jobutils#gtd#sync_update() abort
+  if &modified
+    echoerr 'GTD: save or discard the current buffer before sync update'
+    return
+  endif
+  let l:result = s:run_cli('sync update')
+  if !l:result.ok
+    call s:show_error(l:result.output, 'GTD: sync update failed')
+    return
+  endif
+  call s:reload_current_buffer()
+  call s:show_output(l:result.output)
+  echo 'GTD: sync update completed'
+endfunction
+
 function! jobutils#gtd#sync_plan() abort
   let l:result = s:run_cli('sync plan')
   if !l:result.ok
