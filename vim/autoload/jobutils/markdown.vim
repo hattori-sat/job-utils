@@ -21,6 +21,33 @@ function! s:show_error(output) abort
   endfor
 endfunction
 
+function! jobutils#markdown#format() abort
+  if &filetype !=# 'markdown'
+    echoerr 'GTD: Markdown format requires a Markdown buffer'
+    return
+  endif
+  let l:file = expand('%:p')
+  if empty(l:file)
+    echoerr 'GTD: Markdown format requires a saved file'
+    return
+  endif
+  update
+  let l:command = shellescape(s:python_command()) . ' -m jobutils markdown format'
+         . ' --path ' . shellescape(l:file)
+  let l:output = system(l:command)
+  if v:shell_error != 0
+    echoerr 'GTD: Markdown format failed'
+    for l:line in split(l:output, '\n')
+      if !empty(l:line)
+        echom l:line
+      endif
+    endfor
+    return
+  endif
+  checktime
+  echo 'GTD: Markdown formatted'
+endfunction
+
 function! jobutils#markdown#paste_image(alt_text) abort
   if &filetype !=# 'markdown'
     echoerr 'GTD: paste image requires a Markdown buffer'

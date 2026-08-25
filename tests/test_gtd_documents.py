@@ -22,7 +22,16 @@ class GtdDocumentTests(unittest.TestCase):
     def test_document_template_contains_confluence_identity_fields(self):
         (self.repo / "docs.md").write_text("# Documents\n\n- Design notes\n", encoding="utf-8")
 
-        path = create_document(self.repo, 3)
+        with patch.dict(
+            "os.environ",
+            {
+                "CONFLUENCE_SPACE_ID": "",
+                "CONFLUENCE_SPACE_KEY": "",
+                "CONFLUENCE_PARENT_ID": "",
+            },
+            clear=False,
+        ):
+            path = create_document(self.repo, 3)
 
         text = path.read_text(encoding="utf-8")
         self.assertIn("publish_confluence: false", text)

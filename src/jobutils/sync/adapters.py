@@ -9,6 +9,7 @@ from urllib import request
 
 from jobutils.markdown.normalize import (
     adf_to_markdown,
+    markdown_to_adf,
     markdown_to_storage,
     storage_to_markdown,
 )
@@ -26,7 +27,9 @@ class SyncAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def fetch(self, kind: str, external_id: str) -> Dict:
+    def fetch(
+        self, kind: str, external_id: str, options: Optional[Dict] = None
+    ) -> Dict:
         raise NotImplementedError
 
 
@@ -50,6 +53,7 @@ class MemoryAdapter(SyncAdapter):
             "id": identifier,
             "key": identifier if kind == "jira" else None,
             "url": url,
+            "version": payload.get("version", 0) + 1 if kind == "confluence" else None,
         }
 
     def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
@@ -62,9 +66,12 @@ class MemoryAdapter(SyncAdapter):
             "id": external_id,
             "key": external_id if kind == "jira" else None,
             "url": self.records[external_id]["url"],
+            "version": payload.get("version", 0) + 1 if kind == "confluence" else None,
         }
 
-    def fetch(self, kind: str, external_id: str) -> Dict:
+    def fetch(
+        self, kind: str, external_id: str, options: Optional[Dict] = None
+    ) -> Dict:
         """Return an in-memory record converted back to Markdown."""
 
         record = self.records[external_id]
@@ -73,12 +80,21 @@ class MemoryAdapter(SyncAdapter):
             body = adf_to_markdown(payload.get("description_adf", {}))
         else:
             body = storage_to_markdown(payload.get("storage_body", ""))
-        return {
+        result = {
             "id": external_id,
             "title": payload.get("title", ""),
             "body_markdown": body,
             "url": record["url"],
         }
+        if kind == "jira" and (options or {}).get("progress_comment_field"):
+            result["progress_comment"] = payload.get("progress_comment", "")
+        if kind == "jira":
+            result["issue_type"] = payload.get("issue_type")
+            result["parent_key"] = payload.get("parent_key")
+        else:
+            result["version"] = payload.get("version", 0)
+            result["parent_id"] = payload.get("parent_id")
+        return result
 
 
 class AtlassianHttpAdapter(SyncAdapter):
@@ -92,6 +108,15 @@ class AtlassianHttpAdapter(SyncAdapter):
         """Store non-secret endpoint configuration for later requests."""
 
         self.config = config
+
+    @staticmethod
+    def _progress_value(payload: Dict):
+        """Render Progress Comment for either Jira text-field shape."""
+
+        value = payload.get("progress_comment", "")
+        if payload.get("progress_comment_format") == "adf":
+            return markdown_to_adf(value)
+        return value
 
     def _request(
         self,
@@ -130,10 +155,8 @@ class AtlassianHttpAdapter(SyncAdapter):
                 "issuetype": {"name": payload["issue_type"]},
                 "description": payload["description_adf"],
             }
-            if payload.get("progress_comment_field") and payload.get(
-                "progress_comment"
-            ):
-                fields[payload["progress_comment_field"]] = payload["progress_comment"]
+            if payload.get("progress_comment_field") and "progress_comment" in payload:
+                fields[payload["progress_comment_field"]] = self._progress_value(payload)
             body = {"fields": fields}
             if payload.get("parent_key"):
                 body["fields"]["parent"] = {"key": payload["parent_key"]}
@@ -176,6 +199,7 @@ class AtlassianHttpAdapter(SyncAdapter):
             + str(payload["space_key"])
             + "/pages/"
             + page_id,
+            "version": result.get("version", {}).get("number", 1),
         }
 
     def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
@@ -186,10 +210,10 @@ class AtlassianHttpAdapter(SyncAdapter):
                 "summary": payload["title"],
                 "description": payload["description_adf"],
             }
-            if payload.get("progress_comment_field") and payload.get(
-                "progress_comment"
-            ):
-                fields[payload["progress_comment_field"]] = payload["progress_comment"]
+            if payload.get("parent_key"):
+                fields["parent"] = {"key": payload["parent_key"]}
+            if payload.get("progress_comment_field") and "progress_comment" in payload:
+                fields[payload["progress_comment_field"]] = self._progress_value(payload)
             body = {"fields": fields}
             result = self._request(
                 self.config["jira_base_url"],
@@ -208,6 +232,7 @@ class AtlassianHttpAdapter(SyncAdapter):
             "id": external_id,
             "status": "current",
             "title": payload["title"],
+            "parentId": payload.get("parent_id"),
             "body": {"representation": "storage", "value": payload["storage_body"]},
             "version": {"number": payload["version"] + 1},
         }
@@ -219,9 +244,16 @@ class AtlassianHttpAdapter(SyncAdapter):
             "PUT",
             body,
         )
-        return {"id": external_id, "key": None, "url": payload.get("confluence_url")}
+        return {
+            "id": external_id,
+            "key": None,
+            "url": payload.get("confluence_url"),
+            "version": payload["version"] + 1,
+        }
 
-    def fetch(self, kind: str, external_id: str) -> Dict:
+    def fetch(
+        self, kind: str, external_id: str, options: Optional[Dict] = None
+    ) -> Dict:
         """Fetch and convert an external item into Markdown-compatible text."""
 
         if kind == "jira":
@@ -234,14 +266,27 @@ class AtlassianHttpAdapter(SyncAdapter):
                 {},
             )
             fields = result.get("fields", {})
-            return {
+            response = {
                 "id": external_id,
                 "title": fields.get("summary", ""),
-                "body_markdown": adf_to_markdown(fields.get("description", {})),
+                "body_markdown": adf_to_markdown(fields.get("description") or {}),
                 "url": self.config["jira_base_url"].rstrip("/")
                 + "/browse/"
                 + external_id,
             }
+            field_id = (options or {}).get("progress_comment_field")
+            if field_id:
+                progress = fields.get(field_id, "") or ""
+                if (options or {}).get("progress_comment_format") == "adf":
+                    progress = adf_to_markdown(progress or {})
+                response["progress_comment"] = progress
+            issue_type = fields.get("issuetype") or {}
+            if issue_type.get("name"):
+                response["issue_type"] = issue_type["name"]
+            parent = fields.get("parent") or {}
+            if parent.get("key"):
+                response["parent_key"] = parent["key"]
+            return response
         result = self._request(
             self.config["confluence_base_url"],
             "/wiki/api/v2/pages/" + external_id + "?body-format=storage",
@@ -258,4 +303,6 @@ class AtlassianHttpAdapter(SyncAdapter):
             "url": self.config["confluence_base_url"].rstrip("/")
             + "/wiki/pages/"
             + external_id,
+            "version": result.get("version", {}).get("number"),
+            "parent_id": result.get("parentId"),
         }

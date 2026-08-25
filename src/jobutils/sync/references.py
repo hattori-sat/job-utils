@@ -1,9 +1,34 @@
 """Resolve local Markdown references to published external URLs."""
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from jobutils.markdown.normalize import public_markdown_links
+
+
+def externalize_structured_references(
+    repo_root: Path, references: List[str]
+) -> List[Tuple[str, str]]:
+    """Resolve structured local references to published external URLs."""
+
+    published = published_reference_map(repo_root)
+    result: List[Tuple[str, str]] = []
+    for reference in references:
+        normalized = str(reference).replace("\\", "/")
+        url = published.get(normalized)
+        if url:
+            result.append((Path(normalized).stem, url))
+    return result
+
+
+def append_reference_section(body: str, references: List[Tuple[str, str]]) -> str:
+    """Append a public References section without exposing local paths."""
+
+    if not references:
+        return body
+    lines = [body.rstrip("\n"), "", "# References", ""]
+    lines.extend("- [{}]({})".format(label, url) for label, url in references)
+    return "\n".join(lines) + "\n"
 
 
 def published_reference_map(repo_root: Path) -> Dict[str, str]:

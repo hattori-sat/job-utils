@@ -494,6 +494,32 @@ class VimRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
+    def test_markdown_formatter_command_is_available(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        result = subprocess.run(
+            [
+                vim,
+                "-Nu",
+                "NONE",
+                "-n",
+                "-es",
+                "+set rtp^=" + str(vim_runtime),
+                "+source " + str(vim_runtime / "plugin/jobutils_markdown.vim"),
+                "+if exists(':GtdFormat') != 2 | cquit 70 | endif",
+                "+let g:jobutils_abbreviations = execute('silent cabbrev')",
+                "+if g:jobutils_abbreviations !~# 'gtdformat' | cquit 71 | endif",
+                "+qa!",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
     def test_sync_apply_cancellation_does_not_run_external_command(self):
         vim = shutil.which("vim")
         if vim is None:

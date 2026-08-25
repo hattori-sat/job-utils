@@ -115,6 +115,7 @@ Available commands include:
 - `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
 - `:GtdSyncCheck` — inspect external drift without changing files;
 - `:GtdSyncHelp` — show synchronization commands;
+- `:GtdFormat` / `:gtdformat` — normalize a saved Markdown buffer while preserving fenced code and front matter;
 - `:PasteImage [alt text]` / `:pasteimage` — save a clipboard PNG under `assets/` and insert its Markdown link;
 - `:JobutilsProjectRoot` — show the nearest CMake project root.
 - `:JobutilsCMake` — open the nearest `CMakeLists.txt` in a split.
@@ -161,8 +162,15 @@ jobutils gtd subdocument --repo /absolute/path/to/your-gtd-repository \
 jobutils metrics catalog --repo /absolute/path/to/your-gtd-repository
 jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026-01-01 --to 2026-12-31 --format html,csv,svg,json
 jobutils markdown paste-image --repo /absolute/path/to/your-gtd-repository --file documents/guide.md --name diagram
+jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md
+jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md --check
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
+jobutils git status --repo /absolute/path/to/your-gtd-repository
+jobutils git commit --repo /absolute/path/to/your-gtd-repository --message "chore: save local GTD changes"
+jobutils git push-mock --repo /absolute/path/to/your-gtd-repository
+# Local-only HTTP entrypoint; default bind address is 127.0.0.1.
+jobutils serve --repo /absolute/path/to/your-gtd-repository --port 8765
 ```
 
 When state-based time is too broad, record a focused work interval explicitly:

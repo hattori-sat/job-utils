@@ -17,5 +17,6 @@ document pages, and `.jobutils/` runtime data.
 - [Specifications](spec/)
 - [Agent guidance](docs/agent/project-guidance.md)
 
-The repository is being built incrementally. Feature-specific commands and
-setup instructions are added with their corresponding implementation.
+The setup guide is the user entry point. The normative behavior is maintained
+in `spec/`; research notes and design documents explain the decisions behind
+it. The separate GTD Repository contains personal Markdown and runtime data.

@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from .config import validate_config
 from .env import load_local_env
+from .gitops import GitOperationError, commit as git_commit, push_mock, status as git_status
 from .gtd import (
     DocumentError,
     DispatchError,
@@ -24,7 +25,9 @@ from .metrics.events import append_work_started, append_work_stopped
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
 from .markdown.images import ClipboardError, paste_clipboard_image
+from .markdown.formatter import FormatError, format_file
 from .setup_workflow import SetupError, run_setup
+from .server import serve
 from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
 from .sync.engine import (
     SyncError,
@@ -68,6 +71,9 @@ def _parser() -> argparse.ArgumentParser:
     subdocument_parser.add_argument("--line", type=int, required=True)
     markdown = subparsers.add_parser("markdown")
     markdown_subparsers = markdown.add_subparsers(dest="operation")
+    format_parser = markdown_subparsers.add_parser("format")
+    format_parser.add_argument("--path", required=True)
+    format_parser.add_argument("--check", action="store_true")
     paste_image_parser = markdown_subparsers.add_parser("paste-image")
     paste_image_parser.add_argument("--repo", default=".")
     paste_image_parser.add_argument("--file", required=True)
@@ -137,6 +143,20 @@ def _parser() -> argparse.ArgumentParser:
     rebind_parser.add_argument("--url", default=None)
     rebind_parser.add_argument("--parent-id", default=None)
     sync_subparsers.add_parser("status").add_argument("--repo", default=".")
+    git = subparsers.add_parser("git")
+    git_subparsers = git.add_subparsers(dest="operation")
+    git_status_parser = git_subparsers.add_parser("status")
+    git_status_parser.add_argument("--repo", default=".")
+    git_commit_parser = git_subparsers.add_parser("commit")
+    git_commit_parser.add_argument("--repo", default=".")
+    git_commit_parser.add_argument("--message", required=True)
+    git_push_parser = git_subparsers.add_parser("push-mock")
+    git_push_parser.add_argument("--repo", default=".")
+    git_push_parser.add_argument("--remote", default="mock-origin")
+    git_push_parser.add_argument("--branch", default="")
+    git_push_parser.add_argument(
+        "--remote-url", default="mock://github/local-gtd-repository"
+    )
     config = subparsers.add_parser("config")
     config_subparsers = config.add_subparsers(dest="operation")
     config_validate_parser = config_subparsers.add_parser("validate")
@@ -148,6 +168,10 @@ def _parser() -> argparse.ArgumentParser:
     setup_init.add_argument("--gtd-repo", default=None)
     setup_init.add_argument("--platform", default=None)
     setup_init.add_argument("--skip-env-prompt", action="store_true")
+    serve_parser = subparsers.add_parser("serve")
+    serve_parser.add_argument("--repo", default=".")
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8765)
     return parser
 
 
@@ -175,6 +199,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         except (OSError, SetupError, ValueError) as error:
             print("SETUP: failed: {}".format(error), file=sys.stderr)
             return 1
+    if args.domain == "serve":
+        try:
+            serve(Path(args.repo), host=args.host, port=args.port)
+            return 0
+        except (OSError, ValueError) as error:
+            print("SERVE: failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "config" and args.operation == "validate":
         errors = validate_config(Path(args.path))
         for error in errors:
@@ -199,6 +230,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         except (ClipboardError, OSError, ValueError) as error:
             print("IMAGE: paste failed: {}".format(error), file=sys.stderr)
             return 1
+    if args.domain == "markdown" and args.operation == "format":
+        try:
+            changed = format_file(Path(args.path), check=args.check)
+            if args.check and changed:
+                print("MARKDOWN: formatting required: {}".format(args.path), file=sys.stderr)
+                return 1
+            if args.check:
+                print("ok: {}".format(args.path))
+                return 0
+            print("markdown formatted: {}".format(args.path))
+            return 0
+        except (FormatError, OSError, ValueError) as error:
+            print("MARKDOWN: format failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "metrics" and args.operation == "report":
         formats = [value.strip() for value in args.format.split(",") if value.strip()]
         output_dir = Path(args.output_dir) if args.output_dir else None
@@ -213,6 +258,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1 if errors else 0
+    if args.domain == "git":
+        try:
+            repo = Path(args.repo)
+            if args.operation == "status":
+                print(git_status(repo), end="")
+                return 0
+            if args.operation == "commit":
+                print(json.dumps(git_commit(repo, args.message), sort_keys=True))
+                return 0
+            if args.operation == "push-mock":
+                print(
+                    json.dumps(
+                        push_mock(
+                            repo,
+                            remote=args.remote,
+                            branch=args.branch,
+                            remote_url=args.remote_url,
+                        ),
+                        sort_keys=True,
+                    )
+                )
+                return 0
+        except GitOperationError as error:
+            print("GIT: operation failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "metrics" and args.operation == "catalog":
         print("Tags:")
         for tag in DEFAULT_TAGS:
