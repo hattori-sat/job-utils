@@ -143,11 +143,14 @@ def _is_safe_url(target: object, allow_attachment: bool = False) -> bool:
         parsed = urlparse(target)
     except ValueError:
         return False
-    if parsed.scheme in ("http", "https"):
+    if any(char in target for char in "()[]\\\r\n\t "):
+        return False
+    scheme = parsed.scheme.lower()
+    if scheme in ("http", "https"):
         return bool(parsed.netloc)
-    if parsed.scheme == "mailto":
+    if scheme == "mailto":
         return bool(parsed.path)
-    if parsed.scheme == "attachment":
+    if scheme == "attachment":
         return allow_attachment and bool(re.fullmatch(r"[^/\\:]+", parsed.path))
     return False
 
@@ -314,7 +317,7 @@ def _render_storage_inline(text: str) -> str:
             last = match.end()
             continue
         if image:
-            if target.startswith("attachment:"):
+            if target.lower().startswith("attachment:"):
                 output.append(
                     '<ac:image ac:alt="{0}"><ri:attachment ri:filename="{1}" /></ac:image>'.format(
                         safe_label,

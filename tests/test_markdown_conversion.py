@@ -55,6 +55,12 @@ Useful **context**.
         self.assertNotIn("javascript:", rendered)
         self.assertNotIn('href="javascript:', rendered)
         self.assertNotIn("attachment:../../secret", rendered)
+        self.assertNotIn(
+            "javascript:",
+            storage_to_markdown(
+                '<p><a href="https://example.com/) [evil](javascript:alert(1))">unsafe</a></p>'
+            ),
+        )
 
         markdown = storage_to_markdown(
             '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
@@ -105,6 +111,9 @@ Useful **context**.
         )
         self.assertIn("```python\nprint('<ok>')\n```", markdown)
         self.assertIn("![diagram](attachment:diagram.png)", markdown)
+
+        uppercase_attachment = markdown_to_storage("![diagram](ATTACHMENT:diagram.png)")
+        self.assertIn("ri:attachment", uppercase_attachment)
 
     def test_table_pipes_order_start_and_code_language_survive_round_trip(self):
         source = """3. third
