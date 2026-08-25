@@ -138,6 +138,166 @@ Private content.
         ).strip()
         self.assertEqual(remote_revision, local_revision)
 
+    def test_cli_sync_apply_saves_dirty_worktree_before_external_apply(self):
+        repo = Path(self.tempdir.name) / "repo"
+        repo.mkdir()
+        (repo / "documents").mkdir()
+        (repo / "gtd_tasks").mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "local-test"], cwd=repo, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True
+        )
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True
+        )
+        document = repo / "documents" / "guide.md"
+        document.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\n---\n\n# Guide\n\nInitial.\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: seed sync repository"],
+            cwd=repo,
+            check=True,
+        )
+        document.write_text(
+            document.read_text(encoding="utf-8").replace("Initial.", "Updated."),
+            encoding="utf-8",
+        )
+        plan_path = Path(self.tempdir.name) / "plan.json"
+        plan_path.write_text(json.dumps(create_plan(repo)), encoding="utf-8")
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(
+                [
+                    "sync",
+                    "apply",
+                    "--repo",
+                    str(repo),
+                    "--plan",
+                    str(plan_path),
+                    "--adapter",
+                    "memory",
+                    "--git-sync",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertIsNotNone(response["git"]["pre_apply_commit"])
+        self.assertTrue(response["git"]["push"]["performed"])
+        self.assertEqual(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"], cwd=repo, text=True
+            ),
+            "",
+        )
+
+    def test_cli_sync_pull_combines_git_pull_external_import_commit_and_push(self):
+        repo = Path(self.tempdir.name) / "repo"
+        repo.mkdir()
+        (repo / "documents").mkdir()
+        (repo / "gtd_tasks").mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "local-test"], cwd=repo, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True
+        )
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True
+        )
+        document = repo / "documents" / "guide.md"
+        document.write_text(
+            "---\n"
+            "gtd_id: doc-1\n"
+            "kind: document\n"
+            "title: Guide\n"
+            "publish_confluence: true\n"
+            "confluence_page_id: page-1\n"
+            "---\n\n"
+            "# Guide\n\nLocal content.\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: seed pull repository"],
+            cwd=repo,
+            check=True,
+        )
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repo, check=True)
+
+        peer = Path(self.tempdir.name) / "peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Peer Test"], cwd=peer, check=True
+        )
+        (peer / "from-github.md").write_text("from GitHub\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: add github change"], cwd=peer, check=True
+        )
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        adapter = MemoryAdapter()
+        adapter.records["page-1"] = {
+            "kind": "confluence",
+            "payload": {
+                "title": "Guide",
+                "storage_body": markdown_to_storage("# Guide\n\nRemote content.\n"),
+                "version": 1,
+            },
+            "url": "https://memory.invalid/confluence/page-1",
+        }
+        output = io.StringIO()
+        with patch("jobutils.cli.MemoryAdapter", return_value=adapter), contextlib.redirect_stdout(output):
+            result = main(
+                [
+                    "sync",
+                    "pull",
+                    "--repo",
+                    str(repo),
+                    "--adapter",
+                    "memory",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertTrue(response["git"]["pull"]["performed"])
+        self.assertTrue(response["git"]["push"]["performed"])
+        self.assertTrue((repo / "from-github.md").is_file())
+        self.assertIn("Remote content.", document.read_text(encoding="utf-8"))
+        local_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+        ).strip()
+        branch = response["git"]["push"]["branch"]
+        remote_revision = subprocess.check_output(
+            [
+                "git",
+                "--git-dir",
+                str(remote),
+                "rev-parse",
+                "refs/heads/{}".format(branch),
+            ],
+            text=True,
+        ).strip()
+        self.assertEqual(remote_revision, local_revision)
+
     def test_plan_skips_unmanaged_markdown_without_front_matter(self):
         (self.repo / "documents" / "notes.md").write_text(
             "# Local scratch\n\nThis is not a managed publication.\n",

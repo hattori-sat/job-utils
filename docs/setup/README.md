@@ -116,16 +116,13 @@ Available commands include:
 - `:GtdTags` — show the standard tag catalog;
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
-- `:GtdStart` / `:gtdstart` — record the start of an explicit work interval for the current task;
-- `:GtdStop` / `:gtdstop` — record the end of an explicit work interval for the current task;
 - `:GtdMetricsHelp` — show metrics commands;
 - `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan;
 - `:GtdSyncApply [plan]` — apply the newest or named plan, commit local sync state, and push after confirmation;
-- `:GtdSyncPull` — pull external changes after confirmation;
+- `:GtdSyncPull` — synchronize the Markdown repository with GitHub and then pull external changes after confirmation;
 - `:GtdSyncStatus` — show local plans, bases, pending actions, and conflicts;
 - `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
 - `:GtdSyncCheck` — inspect external drift without changing files;
-- `:GtdGitPush [remote] [branch]` — push an already committed GTD repository branch after confirmation;
 - `:GtdSyncHelp` — show synchronization commands;
 - `:GtdFormat` / `:gtdformat` — normalize a saved Markdown buffer while preserving fenced code and front matter;
 - `:PasteImage [alt text]` / `:pasteimage` — save a clipboard PNG under `assets/` and insert its Markdown link;
@@ -177,33 +174,25 @@ jobutils markdown paste-image --repo /absolute/path/to/your-gtd-repository --fil
 jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md
 jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md --check
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
+jobutils sync pull --repo /absolute/path/to/your-gtd-repository --adapter atlassian
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
-jobutils git status --repo /absolute/path/to/your-gtd-repository
-jobutils git commit --repo /absolute/path/to/your-gtd-repository --message "chore: save local GTD changes"
-jobutils git push --repo /absolute/path/to/your-gtd-repository --remote origin
-jobutils git push-mock --repo /absolute/path/to/your-gtd-repository
 ```
 
-When state-based time is too broad, record a focused work interval explicitly:
-
-```bash
-jobutils metrics start --repo /absolute/path/to/your-gtd-repository --gtd-id TASK-UUID
-jobutils metrics stop --repo /absolute/path/to/your-gtd-repository --gtd-id TASK-UUID
-```
-
-Reports use explicit work intervals for active time when they exist for a task;
-otherwise they use the GTD state transitions.
+Reports derive active, waiting, and scheduled time from the GTD state
+transitions recorded by `:Gtd`.
 
 Synchronization has an explicit review step followed by one confirmed apply.
 `sync plan` reads publishable Markdown and writes a JSON plan under
 `.jobutils/sync/plans/`. Review that file, then use `:GtdSyncApply` or
 `jobutils sync apply --plan PATH --adapter atlassian`. The apply operation uses
 the newest plan when no path is supplied, asks for confirmation before writing
-to Jira or Confluence, commits the resulting local synchronization metadata,
-and pushes the commit to the configured Git remote. If push fails, rerun
-`jobutils git push` after resolving the remote problem. `:GtdSyncPull` asks for
-confirmation before writing pulled changes into local Markdown; commit and
-push those pulled changes with the Git commands above.
+to Jira or Confluence, automatically saves pending local changes, commits the
+resulting local synchronization metadata, and pushes the commits to the
+configured Git remote. `:GtdSyncPull` first
+fast-forwards the local Markdown repository from GitHub, then imports Jira and
+Confluence changes, commits any resulting local changes, and pushes them. A
+failure preserves the local state so the same synchronization operation can
+be retried after the cause is resolved.
 
 Use `jobutils sync check --repo /absolute/path/to/your-gtd-repository
 --adapter atlassian` or `:GtdSyncCheck` before planning when you want to see

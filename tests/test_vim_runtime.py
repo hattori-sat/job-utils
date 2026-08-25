@@ -473,9 +473,6 @@ class VimRuntimeTests(unittest.TestCase):
             "GtdSubdocument",
             "GtdTaskHelp",
             "GtdDocHelp",
-            "GtdStart",
-            "GtdStop",
-            "GtdGitPush",
         )
         command_check = " || ".join(
             "exists(':{}') != 2".format(command) for command in commands
@@ -493,15 +490,14 @@ class VimRuntimeTests(unittest.TestCase):
                 "gtdsubdocument",
                 "gtdtaskhelp",
                 "gtddochelp",
-                "gtdstart",
-                "gtdstop",
-                "gtdgitpush",
             )
         )
         checks = [
             "+if {} | cquit 90 | endif".format(command_check),
             "+let g:jobutils_abbreviations = execute('silent cabbrev')",
             "+if {} | cquit 91 | endif".format(alias_check),
+            "+if exists(':GtdStart') == 2 || exists(':GtdStop') == 2 || exists(':GtdGitPush') == 2 | cquit 92 | endif",
+            "+if g:jobutils_abbreviations =~# 'gtdstart' || g:jobutils_abbreviations =~# 'gtdstop' || g:jobutils_abbreviations =~# 'gtdgitpush' | cquit 93 | endif",
         ]
         result = subprocess.run(
             [

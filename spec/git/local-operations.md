@@ -1,34 +1,29 @@
 # Local Git Operations
 
 The GTD Markdown Repository remains the source repository for personal task
-and document data. job-utils provides explicit local Git helpers for saving
-changes and synchronizing committed data to its configured remote.
+and document data. Git operations are owned by the synchronization workflow in
+normal use.
 
-## Commands
+## User-facing synchronization
 
 ```text
-jobutils git status --repo REPOSITORY
-jobutils git commit --repo REPOSITORY --message "MESSAGE"
-jobutils git push --repo REPOSITORY [--remote origin] [--branch BRANCH]
-jobutils git push-mock --repo REPOSITORY
+jobutils sync apply --repo REPOSITORY --plan PLAN --adapter atlassian
+jobutils sync pull --repo REPOSITORY --adapter atlassian
 ```
 
-`git commit` stages and commits local changes only. Before committing, it
-rejects credential-shaped paths such as `.env`, private-key files, PEM files,
-and common key-store files. The commit intent is recorded in the repository's
-metric event log after this check. It never invokes a remote operation.
+`sync apply` automatically commits pending local changes after the normal
+credential-path checks, performs the external Jira/Confluence apply, commits
+the resulting Markdown and `.jobutils` synchronization state, and pushes the
+commits.
 
-`git push` requires a clean working tree and an existing configured remote. It
-pushes the selected branch using Git's configured credential helper or SSH
-agent. It never invokes a shell, embeds credentials, or force-pushes. A failed
-push leaves the local commit in place so the user can retry `git push`.
+`sync pull` fast-forwards the local branch first, imports external changes,
+then commits and pushes any resulting local changes. A dirty worktree or a
+non-fast-forward branch stops the operation before external requests.
 
-`git push-mock` remains a deterministic dry run for tests and review. It
-requires a clean working tree, reports the branch and revision, always returns
-`performed: false`, and does not create or contact a remote.
+## Internal boundary
 
-`sync apply --adapter atlassian` performs the external Jira/Confluence apply,
-commits the resulting Markdown and `.jobutils` synchronization state, and
-pushes that commit. It stops before the external request if the working tree
-is already dirty. Use `--no-git-sync` only when the local commit and push are
-being handled separately.
+The Python `gitops` module retains direct `commit`, `pull`, `push`, and
+`push_mock` functions for tests and controlled recovery. They use Git without a
+shell, delegate authentication to Git, reject credential-shaped files before a
+commit, never force-push, and redact credential-shaped URLs from errors. These
+functions are not exposed as normal CLI commands.

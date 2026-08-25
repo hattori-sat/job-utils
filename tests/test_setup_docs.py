@@ -15,14 +15,20 @@ class SetupDocumentationTests(unittest.TestCase):
 
     def test_setup_entrypoints_and_environment_reference_are_documented(self):
         setup = (self.root / "docs/setup/README.md").read_text(encoding="utf-8")
+        usage = (self.root / "docs/usage/README.md").read_text(encoding="utf-8")
         variables = (self.root / "docs/setup/environment-variables.md").read_text(
             encoding="utf-8"
         )
         self.assertIn("scripts/setup.sh", setup)
         self.assertIn("scripts\\setup.ps1", setup)
-        self.assertIn("jobutils git push", setup)
-        self.assertIn(":GtdGitPush", setup)
         self.assertNotIn("jobutils serve", setup)
+        self.assertNotIn(":GtdStart", usage)
+        self.assertNotIn(":GtdStop", usage)
+        self.assertNotIn(":GtdGitPush", usage)
+        self.assertIn("sync pull", usage)
+        self.assertIn("GitHub", usage)
+        self.assertIn("Jira", usage)
+        self.assertIn("Confluence", usage)
         self.assertIn("JIRA_API_TOKEN", variables)
         self.assertIn("CONFLUENCE_PARENT_ID", variables)
 

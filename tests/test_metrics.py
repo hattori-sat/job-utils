@@ -8,7 +8,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from jobutils.metrics.aggregate import aggregate
-from jobutils.cli import main
 from jobutils.metrics.reports import (
     build_report,
     csv_text,
@@ -233,42 +232,6 @@ class MetricsTests(unittest.TestCase):
             datetime(2026, 1, 1, 23, 59, tzinfo=timezone.utc),
         )
         self.assertEqual(report["tasks"][0]["active_seconds"], 30 * 60)
-
-    def test_cli_records_explicit_work_interval_events(self):
-        self.assertEqual(
-            main(
-                [
-                    "metrics",
-                    "start",
-                    "--repo",
-                    str(self.repo),
-                    "--gtd-id",
-                    "cli-task",
-                    "--at",
-                    "2026-01-01T09:00:00+00:00",
-                ]
-            ),
-            0,
-        )
-        self.assertEqual(
-            main(
-                [
-                    "metrics",
-                    "stop",
-                    "--repo",
-                    str(self.repo),
-                    "--gtd-id",
-                    "cli-task",
-                    "--at",
-                    "2026-01-01T09:30:00+00:00",
-                ]
-            ),
-            0,
-        )
-        events = list((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
-        text = "\n".join(path.read_text(encoding="utf-8") for path in events)
-        self.assertIn('"event_type": "work_started"', text)
-        self.assertIn('"event_type": "work_stopped"', text)
 
 
 if __name__ == "__main__":
