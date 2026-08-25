@@ -132,9 +132,11 @@ _ORDERED = re.compile(r"^\s*\d+[.)]\s+(.+)$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
-def _is_safe_url(target: str) -> bool:
+def _is_safe_url(target: object, allow_attachment: bool = False) -> bool:
     """Allow only inert link schemes in external representations."""
 
+    if not isinstance(target, str):
+        return False
     if target.startswith("#"):
         return True
     try:
@@ -146,7 +148,7 @@ def _is_safe_url(target: str) -> bool:
     if parsed.scheme == "mailto":
         return bool(parsed.path)
     if parsed.scheme == "attachment":
-        return bool(parsed.path)
+        return allow_attachment and bool(re.fullmatch(r"[^/\\:]+", parsed.path))
     return False
 
 
@@ -159,7 +161,8 @@ def _markdown_table_cell(value: str) -> str:
 def _escape_markdown_text(value: str) -> str:
     """Escape inline delimiters in text imported from an external system."""
 
-    return re.sub(r"([\\\[\]\(\)!])", r"\\\1", value)
+    escaped_html = html.escape(value, quote=False)
+    return re.sub(r"([\\\[\]\(\)!])", r"\\\1", escaped_html)
 
 
 def _table_cells(line: str) -> List[str]:
@@ -306,7 +309,7 @@ def _render_storage_inline(text: str) -> str:
         image, label, target = match.group(1), match.group(2), match.group(3)
         safe_label = html.escape(label, quote=True)
         safe_target = html.escape(target, quote=True)
-        if not _is_safe_url(target):
+        if not _is_safe_url(target, allow_attachment=bool(image)):
             output.append(safe_label)
             last = match.end()
             continue
@@ -471,7 +474,11 @@ def _storage_inline(node: object) -> str:
                 else ""
             )
         alt = _escape_markdown_text(node.attrs.get("ac:alt", ""))
-        return "![{}]({})".format(alt, target) if _is_safe_url(target) else alt
+        return (
+            "![{}]({})".format(alt, target)
+            if _is_safe_url(target, allow_attachment=True)
+            else alt
+        )
     return "".join(_storage_inline(child) for child in node.children)
 
 
@@ -660,7 +667,11 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
             attrs = item.get("attrs", {})
             alt = _escape_markdown_text(attrs.get("alt", ""))
             target = attrs.get("url", "")
-            output.append("![{}]({})".format(alt, target) if _is_safe_url(target) else alt)
+            output.append(
+                "![{}]({})".format(alt, target)
+                if _is_safe_url(target, allow_attachment=True)
+                else alt
+            )
             continue
         text = _escape_markdown_text(item.get("text", ""))
         marks = item.get("marks", []) or []

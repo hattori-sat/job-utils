@@ -48,12 +48,13 @@ Useful **context**.
 
     def test_external_urls_are_preserved_and_unsafe_schemes_are_removed(self):
         rendered = markdown_to_storage(
-            "[safe](https://example.com) [mail](mailto:user@example.com) [bad](javascript:alert(1))"
+            "[safe](https://example.com) [mail](mailto:user@example.com) [bad](javascript:alert(1)) [file](attachment:../../secret)"
         )
         self.assertIn('href="https://example.com"', rendered)
         self.assertIn('href="mailto:user@example.com"', rendered)
         self.assertNotIn("javascript:", rendered)
         self.assertNotIn('href="javascript:', rendered)
+        self.assertNotIn("attachment:../../secret", rendered)
 
         markdown = storage_to_markdown(
             '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
@@ -82,6 +83,16 @@ Useful **context**.
             }
         )
         self.assertEqual(adf_markdown, "bad-image\n")
+
+        html_text = adf_to_markdown(
+            {
+                "type": "doc",
+                "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "<img onerror=bad>"}]}
+                ],
+            }
+        )
+        self.assertIn("&lt;img onerror=bad&gt;", html_text)
 
     def test_storage_code_cdata_and_attachment_images_are_preserved(self):
         markdown = storage_to_markdown(
