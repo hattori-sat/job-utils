@@ -86,8 +86,8 @@
 - Modify: `docs/design/implementation-roadmap.md`
 - Modify: this plan file
 
-- [ ] Update the roadmap and setup guide to distinguish local rebind from external apply.
-- [ ] Run the complete test suite and `git diff --check`.
-- [ ] Scan the public diff for credentials, real Atlassian identifiers, local user paths, generated output, and production-process residue.
+- [x] Update the roadmap and setup guide to distinguish local rebind from external apply.
+- [x] Run the complete test suite and `git diff --check`.
+- [x] Scan the public diff for credentials, real Atlassian identifiers, local user paths, generated output, and production-process residue.
 - [ ] Request code review and resolve all Critical/Important findings.
 - [ ] Commit the final documentation/review changes, push only `codex/pr-sync-rebind`, and open one PR against `main`; do not merge it.

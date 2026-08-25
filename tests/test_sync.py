@@ -522,6 +522,14 @@ Objective.
                 "page-1",
                 "javascript:alert(1)",
             )
+        with self.assertRaisesRegex(SyncError, "unsafe external URL"):
+            rebind(
+                self.repo,
+                "documents/guide.md",
+                "confluence",
+                "page-1",
+                "https://user:secret@example.invalid/page-1",
+            )
 
         self.assertEqual(path.read_text(encoding="utf-8"), original)
 
@@ -607,6 +615,21 @@ Objective.
         with self.assertRaisesRegex(SyncError, "Jira parent issue is unresolved"):
             apply_plan(self.repo, create_plan(self.repo), adapter)
         self.assertEqual(adapter.records, {})
+
+    def test_cyclic_jira_parent_paths_are_rejected(self):
+        for name, parent_path in (
+            ("a", "gtd_tasks/b.md"),
+            ("b", "gtd_tasks/a.md"),
+        ):
+            (self.repo / "gtd_tasks" / (name + ".md")).write_text(
+                "---\nkind: task\ntitle: {}\npublish_jira: true\njira_parent_path: {}\n---\n\n# Summary\n{}\n".format(
+                    name, parent_path, name
+                ),
+                encoding="utf-8",
+            )
+
+        with self.assertRaisesRegex(SyncError, "cyclic Jira"):
+            create_plan(self.repo)
 
     def test_sync_status_ignores_symlinked_plans(self):
         plans = self.repo / ".jobutils" / "sync" / "plans"

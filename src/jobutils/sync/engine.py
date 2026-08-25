@@ -45,7 +45,12 @@ def _validate_external_url(value: Optional[str]) -> Optional[str]:
     if not isinstance(value, str) or any(character.isspace() for character in value):
         raise SyncError("unsafe external URL")
     parsed = urlparse(value)
-    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+    if (
+        parsed.scheme.lower() not in ("http", "https")
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         raise SyncError("unsafe external URL")
     return value
 
@@ -241,13 +246,20 @@ def _order_actions(actions: List[Dict]) -> List[Dict]:
 
     def visit(path: str) -> None:
         if path in visiting:
-            raise SyncError("cyclic Confluence parent relationship: {}".format(path))
+            kind = by_path[path]["kind"].capitalize()
+            raise SyncError("cyclic {} parent relationship: {}".format(kind, path))
         if path in visited:
             return
         visiting.add(path)
         action = by_path[path]
         parent_path = action.get("parent_path")
         if parent_path in by_path:
+            if by_path[parent_path]["kind"] != action["kind"]:
+                raise SyncError(
+                    "{} parent relationship points to a different sync kind: {}".format(
+                        action["kind"].capitalize(), parent_path
+                    )
+                )
             visit(parent_path)
         visiting.remove(path)
         visited.add(path)
