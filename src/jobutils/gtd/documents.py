@@ -82,8 +82,12 @@ def _template(title: str, document_id: str) -> str:
         "created_at: {}".format(frontmatter.quote(today)),
         "updated_at: {}".format(frontmatter.quote(today)),
         "tags: []",
+        "references: []",
+        "allow_subdocuments: false",
         "publish_confluence: false",
         "parent_document_id: null",
+        "parent_gtd_id: null",
+        "parent_path: null",
         "confluence_space_id: {}".format(frontmatter.quote(space_id) if space_id else "null"),
         "confluence_space_key: {}".format(frontmatter.quote(space_key) if space_key else "null"),
         "confluence_parent_id: {}".format(frontmatter.quote(parent_id) if parent_id else "null"),
@@ -94,10 +98,6 @@ def _template(title: str, document_id: str) -> str:
         "---",
         "",
         "# {}".format(title),
-        "",
-        "",
-        "",
-        "# Subdocuments",
         "",
         "",
         "",
@@ -131,6 +131,35 @@ def _level_one_section_bounds(lines, heading: str) -> Optional[Tuple[int, int]]:
         len(lines),
     )
     return header + 1, end
+
+
+def _level_one_section(lines, heading: str) -> Optional[Tuple[int, int]]:
+    """Return the line bounds of a level-one section."""
+
+    start = next(
+        (index for index, line in enumerate(lines) if line.strip() == "# " + heading),
+        None,
+    )
+    if start is None:
+        return None
+    end = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].startswith("# ")),
+        len(lines),
+    )
+    return start, end
+
+
+def _ensure_subdocuments_section(lines):
+    """Materialize the opt-in child section before Implementation Note."""
+
+    existing = _level_one_section(lines, "Subdocuments")
+    if existing is not None:
+        return existing, False
+    implementation = _level_one_section(lines, "Implementation Note")
+    insertion = implementation[0] if implementation is not None else len(lines)
+    section = ["# Subdocuments", "", "", ""]
+    lines[insertion:insertion] = section
+    return (insertion, insertion + len(section)), True
 
 
 def _document_child_item(lines, line_number: int) -> Tuple[int, str, Optional[str]]:
@@ -202,8 +231,25 @@ def create_subdocument(repo_root: Path, parent_path: str, line_number: int) -> P
     if not relative_parent.parts or relative_parent.parts[0] != "documents":
         raise DocumentError("parent document must be under documents: {}".format(parent_path))
 
-    lines = parent.read_text(encoding="utf-8").splitlines()
-    _, title, existing_link = _document_child_item(lines, line_number)
+    lines = _read_index(parent)
+    bounds, inserted = _ensure_subdocuments_section(lines)
+    if inserted:
+        frontmatter.set_value(lines, "allow_subdocuments", "true")
+        _atomic_write(parent, _render(lines))
+        raise DocumentError(
+            "Subdocuments section was added; place the cursor on a child bullet"
+        )
+
+    start, end = bounds[0] + 1, bounds[1]
+    if line_number < 1 or line_number > len(lines):
+        raise DocumentError("line number is outside the parent document")
+    line_index = line_number - 1
+    if line_index < start or line_index >= end:
+        raise DocumentError("place the cursor on a bullet under # Subdocuments")
+    item = _document_item(lines, line_number)
+    if item is None:
+        raise DocumentError("place the cursor on a bullet under # Subdocuments")
+    _, title, existing_link = item
     if existing_link:
         path = _safe_link(repo_root, existing_link)
         if not path.is_file():
@@ -225,10 +271,14 @@ def create_subdocument(repo_root: Path, parent_path: str, line_number: int) -> P
         "created_at: {}".format(frontmatter.quote(date.today().isoformat())),
         "updated_at: {}".format(frontmatter.quote(date.today().isoformat())),
         "tags: []",
+        "references: []",
+        "allow_subdocuments: true",
         "publish_confluence: {}".format(
             "true" if _is_true(frontmatter.value(lines, "publish_confluence")) else "false"
         ),
         "parent_document_id: {}".format(frontmatter.quote(parent_id)),
+        "parent_gtd_id: {}".format(frontmatter.quote(parent_id)),
+        "parent_path: {}".format(frontmatter.quote(relative_parent.as_posix())),
         "confluence_space_id: {}".format(
             frontmatter.quote(frontmatter.value(lines, "confluence_space_id"))
             if frontmatter.value(lines, "confluence_space_id")

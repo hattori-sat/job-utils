@@ -13,10 +13,15 @@ from urllib.parse import urlparse
 
 from jobutils.gtd import frontmatter
 from jobutils.markdown.normalize import markdown_to_adf, markdown_to_storage, parse_document
+from jobutils.metrics.events import append_event
 
 from .adapters import SyncAdapter
 from .defaults import load_sync_defaults
-from .references import externalize_references
+from .references import (
+    append_reference_section,
+    externalize_references,
+    externalize_structured_references,
+)
 from .merge import three_way_merge
 
 
@@ -27,6 +32,16 @@ class SyncError(Exception):
 
 
 _EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+_EXTERNAL_FRONTMATTER_KEYS = {
+    "jira_key",
+    "jira_url",
+    "jira_parent_key",
+    "confluence_page_id",
+    "confluence_url",
+    "confluence_parent_id",
+    "confluence_version",
+    "sync_hash",
+}
 
 
 def _validate_external_identity(value: Optional[str], label: str) -> str:
@@ -115,11 +130,25 @@ def rebind(
         if safe_parent is not None:
             updates["jira_parent_key"] = safe_parent
     else:
+        old_page_id = frontmatter.value(
+            path.read_text(encoding="utf-8").splitlines(), "confluence_page_id"
+        )
         updates = {"confluence_page_id": identity}
         updates["confluence_url"] = safe_url or ""
         if safe_parent is not None:
             updates["confluence_parent_id"] = safe_parent
     _atomic_frontmatter_update(path, updates)
+    if kind == "confluence" and old_page_id and old_page_id != identity:
+        for child_path in _documents(Path(repo_root).resolve()):
+            if child_path == path:
+                continue
+            child_lines = child_path.read_text(encoding="utf-8").splitlines()
+            if frontmatter.bounds(child_lines) is None:
+                continue
+            if frontmatter.value(child_lines, "confluence_parent_id") == old_page_id:
+                _atomic_frontmatter_update(
+                    child_path, {"confluence_parent_id": identity}
+                )
     return path
 
 
@@ -139,6 +168,24 @@ def _source_hash(repo_root: Path, paths: List[Path]) -> str:
     return digest.hexdigest()
 
 
+def _source_fingerprint(lines: List[str], public_body: str) -> str:
+    """Hash authoring data while excluding generated external identities."""
+
+    location = frontmatter.bounds(lines)
+    metadata = []
+    if location is not None:
+        for line in lines[location[0] + 1 : location[1]]:
+            key = line.split(":", 1)[0].strip() if ":" in line else ""
+            if key not in _EXTERNAL_FRONTMATTER_KEYS:
+                metadata.append(line.rstrip())
+    value = json.dumps(
+        {"metadata": metadata, "public_body": public_body},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _documents(repo_root: Path) -> List[Path]:
     """Return task and document Markdown files eligible for synchronization."""
 
@@ -155,14 +202,37 @@ def _documents(repo_root: Path) -> List[Path]:
     return sorted(paths)
 
 
+def _published_paths(repo_root: Path) -> List[Path]:
+    """Return all managed files selected for external publication."""
+
+    result = []
+    for path in _documents(repo_root):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if frontmatter.bounds(lines) is None:
+            continue
+        document = parse_document(str(path))
+        if _bool(document.metadata.get("publish_jira")) or _bool(
+            document.metadata.get("publish_confluence")
+        ):
+            result.append(path)
+    return result
+
+
 def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
     """Build the sanitized adapter payload for one Markdown document."""
 
     document = parse_document(str(path))
     defaults = load_sync_defaults()
     body = externalize_references(repo_root, document.public_body, path)
+    body = append_reference_section(
+        body,
+        externalize_structured_references(
+            repo_root, document.metadata.get("references") or []
+        ),
+    )
     if kind == "jira":
         return {
+            "gtd_id": document.metadata.get("gtd_id"),
             "title": document.metadata.get("title") or path.stem,
             "description_adf": markdown_to_adf(body),
             "project": document.metadata.get("jira_project") or defaults["jira_project"],
@@ -175,8 +245,13 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
                 "jira_progress_comment_field"
             )
             or defaults["jira_progress_comment_field"],
+            "progress_comment_format": document.metadata.get(
+                "jira_progress_comment_format"
+            )
+            or "text",
         }
     return {
+        "gtd_id": document.metadata.get("gtd_id"),
         "title": document.metadata.get("title") or path.stem,
         "storage_body": markdown_to_storage(body),
         "space_id": document.metadata.get("confluence_space_id")
@@ -199,7 +274,23 @@ def create_plan(repo_root: Path) -> Dict:
     actions: List[Dict] = []
     published_paths: List[Path] = []
     for path in sorted(paths, key=lambda value: (len(value.relative_to(repo_root).parts), str(value))):
+        if frontmatter.bounds(path.read_text(encoding="utf-8").splitlines()) is None:
+            continue
         document = parse_document(str(path))
+        declared_kind = str(document.metadata.get("kind") or "").lower()
+        if declared_kind == "task" and _bool(
+            document.metadata.get("publish_confluence")
+        ):
+            raise SyncError(
+                "task documents can publish only to Jira; remove publish_confluence"
+            )
+        if declared_kind == "document" and _bool(
+            document.metadata.get("publish_jira")
+        ):
+            raise SyncError(
+                "document documents can publish only to Confluence; "
+                "remove publish_jira"
+            )
         kind = (
             "jira"
             if _bool(document.metadata.get("publish_jira"))
@@ -216,6 +307,19 @@ def create_plan(repo_root: Path) -> Dict:
             else document.metadata.get("confluence_page_id")
         )
         operation = "update" if external_id else "create"
+        if external_id:
+            source_fingerprint = _source_fingerprint(
+                path.read_text(encoding="utf-8").splitlines(), document.public_body
+            )
+            if document.metadata.get("sync_hash") == source_fingerprint:
+                continue
+            base_file = _base_path(repo_root, path)
+            if (
+                not document.metadata.get("sync_hash")
+                and base_file.is_file()
+                and base_file.read_text(encoding="utf-8") == document.public_body
+            ):
+                continue
         action = {
                 "action_id": str(uuid.uuid4()),
                 "action": operation,
@@ -297,6 +401,12 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
     """Summarize local synchronization state without contacting Atlassian."""
 
     repo_root = Path(repo_root).resolve()
+    from jobutils.metrics.reader import read_events
+
+    events, read_errors = read_events(repo_root)
+    sync_events = [
+        event for event in events if str(event.get("event_type", "")).startswith("sync_")
+    ]
     plan_paths = sorted(
         (repo_root / ".jobutils" / "sync" / "plans").glob("*.json")
     )
@@ -336,6 +446,11 @@ def sync_status(repo_root: Path) -> Dict[str, object]:
         "latest_plan": latest_plan,
         "pending_actions": pending_actions,
         "plan_count": len(plan_records),
+        "last_sync_at": sync_events[-1]["occurred_at"] if sync_events else None,
+        "error_count": sum(
+            1 for event in sync_events if event.get("event_type") == "sync_error"
+        ),
+        "read_error_count": len(read_errors),
     }
 
 
@@ -491,6 +606,16 @@ def _set_external(
 
     lines = path.read_text(encoding="utf-8").splitlines()
     if kind == "jira":
+        if payload:
+            frontmatter.set_value(lines, "jira_project", payload.get("project") or "")
+            frontmatter.set_value(
+                lines, "jira_issue_type", payload.get("issue_type") or "Task"
+            )
+            frontmatter.set_value(
+                lines,
+                "jira_progress_comment_field",
+                payload.get("progress_comment_field") or "",
+            )
         frontmatter.set_value(
             lines, "jira_key", result.get("key") or result.get("id") or ""
         )
@@ -500,18 +625,111 @@ def _set_external(
                 lines, "jira_parent_key", str(payload["parent_key"])
             )
     else:
+        if payload:
+            frontmatter.set_value(
+                lines, "confluence_space_id", payload.get("space_id") or ""
+            )
+            frontmatter.set_value(
+                lines, "confluence_space_key", payload.get("space_key") or ""
+            )
+            if payload.get("parent_id") is not None:
+                frontmatter.set_value(
+                    lines, "confluence_parent_id", str(payload["parent_id"])
+                )
         frontmatter.set_value(lines, "confluence_page_id", str(result.get("id") or ""))
         frontmatter.set_value(lines, "confluence_url", result.get("url") or "")
+        if result.get("version") is not None:
+            frontmatter.set_value(lines, "confluence_version", str(result["version"]))
         if payload and payload.get("parent_id"):
             frontmatter.set_value(
                 lines, "confluence_parent_id", str(payload["parent_id"])
             )
+    document = parse_document(str(path))
     frontmatter.set_value(
-        lines, "sync_hash", hashlib.sha256(path.read_bytes()).hexdigest()
+        lines,
+        "sync_hash",
+        _source_fingerprint(lines, document.public_body),
     )
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
     os.replace(str(temporary), str(path))
+
+
+def _replace_level_one_section(body: str, heading: str, content: str) -> str:
+    """Replace or append one public level-one Markdown section."""
+
+    heading_pattern = re.compile(
+        r"(?m)^#\s+{}\s*$".format(re.escape(heading))
+    )
+    match = heading_pattern.search(body)
+    replacement = "# {}\n\n{}\n".format(heading, content.strip())
+    if not match:
+        return body.rstrip() + "\n\n" + replacement
+    next_heading = re.search(r"(?m)^#\s+.+?\s*$", body[match.end() :])
+    end = match.end() + next_heading.start() if next_heading else len(body)
+    return body[: match.start()] + replacement + body[end:]
+
+
+def _materialize_external_reference(path: Path, kind: str, result: Dict) -> None:
+    """Add or update a clickable external identity in local References."""
+
+    url = _validate_external_url(result.get("url"))
+    if not url:
+        return
+    if kind == "jira":
+        identity = result.get("key") or result.get("id") or "issue"
+        label = "Jira"
+    else:
+        identity = result.get("id") or "page"
+        label = "Confluence"
+    reference = "- {}: [{}]({})".format(label, identity, url)
+
+    document = parse_document(str(path))
+    lines = document.section("References").splitlines()
+    updated = []
+    replaced = False
+    prefix = "- {}:".format(label)
+    for line in lines:
+        if line.strip().startswith(prefix):
+            if not replaced:
+                updated.append(reference)
+                replaced = True
+            continue
+        updated.append(line)
+    if not replaced:
+        while updated and not updated[-1].strip():
+            updated.pop()
+        if updated:
+            updated.append("")
+        updated.append(reference)
+
+    public_body = _replace_level_one_section(
+        document.public_body, "References", "\n".join(updated)
+    )
+    body = public_body.rstrip() + "\n"
+    if document.implementation_note.strip():
+        body += "\n# Implementation Note\n\n{}\n".format(
+            document.implementation_note.strip()
+        )
+
+    source_lines = path.read_text(encoding="utf-8").splitlines()
+    location = frontmatter.bounds(source_lines)
+    if location is None:
+        raise SyncError("managed Markdown has no front matter: {}".format(path))
+    rendered = "\n".join(source_lines[: location[1] + 1]) + "\n\n" + body.lstrip()
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=".jobutils-reference-", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(rendered)
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
@@ -524,7 +742,9 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
         _managed_action_path(repo_root, action["path"])
         for action in plan["actions"]
     ]
-    hash_paths = _source_paths_for_actions(repo_root, plan["actions"], paths)
+    hash_paths = _source_paths_for_actions(
+        repo_root, plan["actions"], _published_paths(repo_root)
+    )
     if _source_hash(repo_root, hash_paths) != plan.get("source_hash"):
         raise SyncError("sync plan is stale; create a new plan")
     results = []
@@ -554,10 +774,29 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             payload[
                 "parent_id" if action["kind"] == "confluence" else "parent_key"
             ] = parent_id
-        if action["action"] == "create":
-            result = adapter.create(action["kind"], payload)
-        else:
-            result = adapter.update(action["kind"], action["external_id"], payload)
+        try:
+            if action["action"] == "create":
+                result = adapter.create(action["kind"], payload)
+            else:
+                result = adapter.update(action["kind"], action["external_id"], payload)
+        except Exception as error:
+            append_event(
+                repo_root,
+                "sync_error",
+                payload.get("gtd_id") or action["path"],
+                source={
+                    "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+                    "command": "sync apply",
+                },
+                kind=action["kind"],
+                action=action["action"],
+                path=action["path"],
+                error=error.__class__.__name__,
+            )
+            raise SyncError(
+                "sync apply failed for {}: {}".format(action["path"], error)
+            ) from error
+        _materialize_external_reference(path, action["kind"], result)
         _set_external(path, action["kind"], result, payload)
         external_id = (
             result.get("id")
@@ -567,6 +806,18 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
         if external_id:
             created_external_ids[action["path"]] = str(external_id)
         _write_base(repo_root, path, parse_document(str(path)).public_body)
+        append_event(
+            repo_root,
+            "sync_applied",
+            payload.get("gtd_id") or action["path"],
+            source={
+                "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+                "command": "sync apply",
+            },
+            kind=action["kind"],
+            action=action["action"],
+            path=action["path"],
+        )
         results.append(
             {"action_id": action["action_id"], "path": action["path"], "result": result}
         )
@@ -662,12 +913,51 @@ def _write_base(repo_root: Path, path: Path, body: str) -> None:
     target.write_text(body, encoding="utf-8")
 
 
+def _apply_remote_metadata(path: Path, remote: Dict) -> None:
+    """Materialize external title, relationship metadata, and progress text."""
+
+    document = parse_document(str(path))
+    lines = path.read_text(encoding="utf-8").splitlines()
+    changed = False
+    for key, value in (
+        ("title", remote.get("title")),
+        ("jira_issue_type", remote.get("issue_type")),
+        ("jira_parent_key", remote.get("parent_key")),
+        ("confluence_parent_id", remote.get("parent_id")),
+        ("confluence_version", remote.get("version")),
+    ):
+        if value is not None:
+            frontmatter.set_value(lines, key, str(value))
+            changed = True
+    body = document.public_body
+    if remote.get("progress_comment") is not None:
+        body = _replace_level_one_section(
+            body, "Progress Comment", str(remote["progress_comment"])
+        )
+        changed = True
+    if changed:
+        closing = frontmatter.bounds(lines)
+        if closing is None:
+            raise SyncError("managed Markdown has no front matter: {}".format(path))
+        suffix = document.implementation_note.rstrip("\n")
+        body_lines = body.rstrip("\n").splitlines()
+        if suffix:
+            body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
+        path.write_text(
+            "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
+            + "\n",
+            encoding="utf-8",
+        )
+
+
 def pull(repo_root: Path, adapter: SyncAdapter) -> List[Dict]:
     """Pull external content and preserve two-sided changes as conflicts."""
 
     repo_root = Path(repo_root).resolve()
     results: List[Dict] = []
     for path in _documents(repo_root):
+        if frontmatter.bounds(path.read_text(encoding="utf-8").splitlines()) is None:
+            continue
         document = parse_document(str(path))
         kind = (
             "jira"
@@ -683,7 +973,19 @@ def pull(repo_root: Path, adapter: SyncAdapter) -> List[Dict]:
         )
         if not kind or not external_id:
             continue
-        remote = adapter.fetch(kind, external_id)
+        remote = adapter.fetch(
+            kind,
+            external_id,
+            {
+                "progress_comment_field": document.metadata.get(
+                    "jira_progress_comment_field"
+                ),
+                "progress_comment_format": document.metadata.get(
+                    "jira_progress_comment_format"
+                )
+                or "text",
+            },
+        )
         base_file = _base_path(repo_root, path)
         base = (
             base_file.read_text(encoding="utf-8")
@@ -707,6 +1009,8 @@ def pull(repo_root: Path, adapter: SyncAdapter) -> List[Dict]:
             new_lines = lines[: closing[1] + 1] + [""] + body_lines
             path.write_text("\n".join(new_lines).rstrip("\n") + "\n", encoding="utf-8")
             _write_base(repo_root, path, remote.get("body_markdown", ""))
+            _apply_remote_metadata(path, remote)
+            _write_base(repo_root, path, parse_document(str(path)).public_body)
         else:
             lines = path.read_text(encoding="utf-8").splitlines()
             closing = frontmatter.bounds(lines)
@@ -719,6 +1023,18 @@ def pull(repo_root: Path, adapter: SyncAdapter) -> List[Dict]:
                 + "\n",
                 encoding="utf-8",
             )
+        append_event(
+            repo_root,
+            "sync_conflict" if conflict else "sync_pulled",
+            document.metadata.get("gtd_id") or str(path.relative_to(repo_root)),
+            source={
+                "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+                "command": "sync pull",
+            },
+            kind=kind,
+            path=str(path.relative_to(repo_root)).replace("\\", "/"),
+            conflict=conflict,
+        )
         results.append(
             {
                 "path": str(path.relative_to(repo_root)),

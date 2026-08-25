@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.gtd.documents import create_document, create_subdocument
+from jobutils.gtd.documents import DocumentError, create_document, create_subdocument
 
 
 class GtdDocumentTests(unittest.TestCase):
@@ -22,14 +22,44 @@ class GtdDocumentTests(unittest.TestCase):
     def test_document_template_contains_confluence_identity_fields(self):
         (self.repo / "docs.md").write_text("# Documents\n\n- Design notes\n", encoding="utf-8")
 
-        path = create_document(self.repo, 3)
+        with patch.dict(
+            "os.environ",
+            {
+                "CONFLUENCE_SPACE_ID": "",
+                "CONFLUENCE_SPACE_KEY": "",
+                "CONFLUENCE_PARENT_ID": "",
+            },
+            clear=False,
+        ):
+            path = create_document(self.repo, 3)
 
         text = path.read_text(encoding="utf-8")
         self.assertIn("publish_confluence: false", text)
         self.assertIn("confluence_parent_id: null", text)
         self.assertIn("confluence_page_id: null", text)
-        self.assertIn("# Subdocuments", text)
+        self.assertNotIn("# Subdocuments", text)
+        self.assertIn("allow_subdocuments: false", text)
         self.assertIn("# Implementation Note", text)
+
+    def test_first_subdocument_request_materializes_opt_in_section(self):
+        parent = self.repo / "documents" / "parent.md"
+        parent.write_text(
+            "---\n"
+            "gtd_id: 'parent-1'\n"
+            "kind: 'document'\n"
+            "allow_subdocuments: false\n"
+            "---\n\n"
+            "# Parent\n\n"
+            "# Implementation Note\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(DocumentError, "Subdocuments section was added"):
+            create_subdocument(self.repo, "documents/parent.md", 5)
+
+        updated = parent.read_text(encoding="utf-8")
+        self.assertIn("allow_subdocuments: 'true'", updated)
+        self.assertIn("# Subdocuments", updated)
 
     def test_document_template_materializes_non_secret_confluence_defaults(self):
         (self.repo / "docs.md").write_text("# Documents\n\n- Design notes\n", encoding="utf-8")

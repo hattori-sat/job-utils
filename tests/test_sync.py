@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -69,6 +70,199 @@ Private content.
         updated = path.read_text(encoding="utf-8")
         self.assertIn("confluence_page_id:", updated)
         self.assertIn("confluence_url:", updated)
+
+    def test_cli_sync_apply_commits_and_pushes_requested_git_sync(self):
+        repo = Path(self.tempdir.name) / "repo"
+        repo.mkdir()
+        (repo / "documents").mkdir()
+        (repo / "gtd_tasks").mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "local-test"], cwd=repo, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True
+        )
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True
+        )
+        document = repo / "documents" / "guide.md"
+        document.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\n---\n\n# Guide\n\nContent.\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: seed sync repository"],
+            cwd=repo,
+            check=True,
+        )
+        plan_path = Path(self.tempdir.name) / "plan.json"
+        plan_path.write_text(
+            json.dumps(create_plan(repo)), encoding="utf-8"
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(
+                [
+                    "sync",
+                    "apply",
+                    "--repo",
+                    str(repo),
+                    "--plan",
+                    str(plan_path),
+                    "--adapter",
+                    "memory",
+                    "--git-sync",
+                ]
+            )
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertTrue(response["git"]["push"]["performed"])
+        local_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+        ).strip()
+        branch = response["git"]["push"]["branch"]
+        remote_revision = subprocess.check_output(
+            [
+                "git",
+                "--git-dir",
+                str(remote),
+                "rev-parse",
+                "refs/heads/{}".format(branch),
+            ],
+            text=True,
+        ).strip()
+        self.assertEqual(remote_revision, local_revision)
+
+    def test_plan_skips_unmanaged_markdown_without_front_matter(self):
+        (self.repo / "documents" / "notes.md").write_text(
+            "# Local scratch\n\nThis is not a managed publication.\n",
+            encoding="utf-8",
+        )
+
+        plan = create_plan(self.repo)
+
+        self.assertEqual(plan["actions"], [])
+
+    def test_plan_rejects_cross_domain_publication(self):
+        task = self.repo / "gtd_tasks" / "task.md"
+        task.write_text(
+            "---\nkind: task\npublish_confluence: true\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(SyncError, "only to Jira"):
+            create_plan(self.repo)
+
+        task.write_text(
+            "---\nkind: task\npublish_jira: true\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        document = self.repo / "documents" / "guide.md"
+        document.write_text(
+            "---\nkind: document\npublish_jira: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(SyncError, "only to Confluence"):
+            create_plan(self.repo)
+
+    def test_apply_materializes_resolved_defaults(self):
+        task = self.repo / "gtd_tasks" / "task.md"
+        task.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Task\n"
+            "publish_jira: true\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        document = self.repo / "documents" / "guide.md"
+        document.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        defaults = {
+            "JIRA_PROJECT": "LCL",
+            "JIRA_ISSUE_TYPE": "Story",
+            "JIRA_PROGRESS_COMMENT_FIELD": "customfield_progress",
+            "CONFLUENCE_SPACE_ID": "space-local",
+            "CONFLUENCE_SPACE_KEY": "DOCS",
+            "CONFLUENCE_PARENT_ID": "parent-local",
+        }
+        with patch.dict(os.environ, defaults, clear=False):
+            apply_plan(self.repo, create_plan(self.repo), MemoryAdapter())
+
+        task_text = task.read_text(encoding="utf-8")
+        document_text = document.read_text(encoding="utf-8")
+        self.assertIn("jira_project: 'LCL'", task_text)
+        self.assertIn("jira_issue_type: 'Story'", task_text)
+        self.assertIn("jira_progress_comment_field: 'customfield_progress'", task_text)
+        self.assertIn("confluence_space_id: 'space-local'", document_text)
+        self.assertIn("confluence_space_key: 'DOCS'", document_text)
+        self.assertIn("confluence_parent_id: 'parent-local'", document_text)
+
+    def test_applied_unchanged_item_is_not_pending_again(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        self.assertEqual(create_plan(self.repo)["actions"], [])
+
+    def test_apply_records_success_and_failure_events(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\ngtd_id: doc-1\nkind: document\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        apply_plan(self.repo, create_plan(self.repo), MemoryAdapter())
+        events = list((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        self.assertTrue(
+            any('"event_type": "sync_applied"' in item.read_text() for item in events)
+        )
+
+        failing = self.repo / "documents" / "failing.md"
+        failing.write_text(
+            "---\ngtd_id: doc-2\nkind: document\npublish_confluence: true\n---\n\n# Failing\n",
+            encoding="utf-8",
+        )
+
+        class FailingAdapter(MemoryAdapter):
+            def create(self, kind, payload):
+                raise RuntimeError("simulated failure")
+
+        with self.assertRaises(SyncError):
+            apply_plan(self.repo, create_plan(self.repo), FailingAdapter())
+        self.assertNotIn("confluence_page_id:", failing.read_text(encoding="utf-8"))
+        events = list((self.repo / ".jobutils/metrics/events").glob("*.jsonl"))
+        self.assertTrue(
+            any('"event_type": "sync_error"' in item.read_text() for item in events)
+        )
+
+    def test_pull_imports_remote_title_and_progress_comment(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Local\n"
+            "publish_jira: true\njira_progress_comment_field: customfield_progress\n---\n\n"
+            "# Summary\nLocal body\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        record = next(iter(adapter.records.values()))
+        record["payload"]["title"] = "Remote title"
+        record["payload"]["progress_comment"] = "Remote progress"
+
+        result = pull(self.repo, adapter)
+
+        self.assertFalse(result[0]["conflict"])
+        updated = path.read_text(encoding="utf-8")
+        self.assertIn("title: 'Remote title'", updated)
+        self.assertIn("# Progress Comment\n\nRemote progress", updated)
 
     def test_apply_creates_unpublished_confluence_parent_before_child(self):
         parent = self.repo / "documents" / "parent.md"
@@ -322,6 +516,60 @@ Base content.
         )
         self.assertEqual(rendered, "[Target](https://example.invalid/page)")
 
+    def test_apply_adds_clickable_external_reference_to_task_markdown(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task'
+publish_jira: 'true'
+jira_project: 'DEMO'
+jira_issue_type: 'Task'
+---
+
+# Summary
+
+Task summary.
+
+# References
+
+- Internal design note
+
+# Implementation Note
+
+Private note.
+""",
+            encoding="utf-8",
+        )
+
+        apply_plan(self.repo, create_plan(self.repo), MemoryAdapter())
+
+        updated = path.read_text(encoding="utf-8")
+        self.assertIn(
+            "- Jira: [MEM-1](https://memory.invalid/jira/MEM-1)", updated
+        )
+        self.assertIn("- Internal design note", updated)
+        self.assertIn("# Implementation Note\n\nPrivate note.", updated)
+
+    def test_structured_references_publish_external_links_without_local_paths(self):
+        target = self.repo / "documents" / "target.md"
+        target.write_text(
+            "---\nkind: document\nconfluence_url: 'https://example.invalid/target'\n---\n\n# Target\n",
+            encoding="utf-8",
+        )
+        source = self.repo / "gtd_tasks" / "task.md"
+        source.write_text(
+            "---\nkind: task\npublish_jira: true\nreferences:\n"
+            "  - documents/target.md\n---\n\n# Summary\nTask\n",
+            encoding="utf-8",
+        )
+
+        payload = create_plan(self.repo)["actions"][0]["payload"]
+
+        self.assertIn("https://example.invalid/target", json.dumps(payload))
+        self.assertNotIn("documents/target.md", json.dumps(payload))
+
     def test_jira_payload_keeps_progress_comment_as_configured_text_field(self):
         path = self.repo / "gtd_tasks" / "task.md"
         path.write_text(
@@ -399,7 +647,7 @@ Objective.
                 "title": "Guide",
                 "storage_body": "<h1>Guide</h1>",
                 "space_id": "space-1",
-                "space_key": "KB",
+                "space_key": "DOCS",
                 "version": 0,
             },
         }
@@ -445,9 +693,12 @@ Objective.
         expected = {
             "base_count": 1,
             "conflict_count": 1,
+            "error_count": 0,
             "latest_plan": ".jobutils/sync/plans/plan-2.json",
+            "last_sync_at": None,
             "pending_actions": 3,
             "plan_count": 2,
+            "read_error_count": 0,
         }
         self.assertEqual(sync_status(self.repo), expected)
 
@@ -510,6 +761,29 @@ Objective.
             "confluence_url: 'https://example.invalid/wiki/pages/PAGE-42'", text
         )
         self.assertIn("confluence_parent_id: 'PARENT-9'", text)
+
+    def test_rebind_confluence_parent_updates_children_atomically(self):
+        parent = self.repo / "documents" / "parent.md"
+        child = self.repo / "documents" / "child.md"
+        parent.write_text(
+            "---\nkind: document\nconfluence_page_id: 'OLD-PAGE'\n---\n\n# Parent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\nkind: document\nconfluence_parent_id: 'OLD-PAGE'\n---\n\n# Child\n",
+            encoding="utf-8",
+        )
+
+        rebind(
+            self.repo,
+            "documents/parent.md",
+            "confluence",
+            "NEW-PAGE",
+            "https://example.invalid/wiki/pages/NEW-PAGE",
+        )
+
+        self.assertIn("confluence_page_id: 'NEW-PAGE'", parent.read_text())
+        self.assertIn("confluence_parent_id: 'NEW-PAGE'", child.read_text())
 
     def test_rebind_rejects_invalid_target_before_mutation(self):
         path = self.repo / "documents" / "guide.md"
@@ -598,11 +872,11 @@ Objective.
         child = parent.with_suffix("") / "child.md"
         child.parent.mkdir()
         parent.write_text(
-            "---\ngtd_id: parent\nkind: task\ntitle: Parent\npublish_jira: true\njira_project: LIG\n---\n\n# Summary\nParent\n",
+            "---\ngtd_id: parent\nkind: task\ntitle: Parent\npublish_jira: true\njira_project: DEMO\n---\n\n# Summary\nParent\n",
             encoding="utf-8",
         )
         child.write_text(
-            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: LIG\njira_issue_type: Sub-task\njira_parent_path: gtd_tasks/parent.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
+            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: DEMO\njira_issue_type: Sub-task\njira_parent_path: gtd_tasks/parent.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
             encoding="utf-8",
         )
 
@@ -632,7 +906,7 @@ Objective.
     def test_jira_parent_path_without_parent_identity_fails_before_child_write(self):
         child = self.repo / "gtd_tasks" / "child.md"
         child.write_text(
-            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: LIG\njira_parent_path: gtd_tasks/missing.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
+            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: DEMO\njira_parent_path: gtd_tasks/missing.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
             encoding="utf-8",
         )
         adapter = MemoryAdapter()

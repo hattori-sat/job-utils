@@ -42,16 +42,41 @@ def value(lines: List[str], key: str) -> Optional[str]:
 
 
 def list_value(lines: List[str], key: str) -> List[str]:
-    """Read a simple inline YAML list such as ``tags: [one, two]``."""
+    """Read an inline or standard block YAML list."""
 
     raw = value(lines, key)
-    if not raw or not (raw.startswith("[") and raw.endswith("]")):
+    if raw:
+        if not (raw.startswith("[") and raw.endswith("]")):
+            return []
+        result = []
+        for part in raw[1:-1].split(","):
+            item = part.strip().strip("'\"")
+            if item:
+                result.append(item)
+        return result
+
+    location = bounds(lines)
+    if location is None:
+        return []
+    key_pattern = re.compile(r"^{}:\s*$".format(re.escape(key)))
+    item_pattern = re.compile(r"^\s+-\s+(.+?)\s*$")
+    start = None
+    for index in range(location[0] + 1, location[1]):
+        if key_pattern.match(lines[index]):
+            start = index + 1
+            break
+    if start is None:
         return []
     result = []
-    for part in raw[1:-1].split(","):
-        item = part.strip().strip("'\"")
-        if item:
-            result.append(item)
+    for line in lines[start : location[1]]:
+        match = item_pattern.match(line)
+        if match:
+            item = match.group(1).strip().strip("'\"")
+            if item:
+                result.append(item)
+            continue
+        if line.strip():
+            break
     return result
 
 

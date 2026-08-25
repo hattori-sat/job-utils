@@ -20,6 +20,9 @@ class SetupDocumentationTests(unittest.TestCase):
         )
         self.assertIn("scripts/setup.sh", setup)
         self.assertIn("scripts\\setup.ps1", setup)
+        self.assertIn("jobutils git push", setup)
+        self.assertIn(":GtdGitPush", setup)
+        self.assertNotIn("jobutils serve", setup)
         self.assertIn("JIRA_API_TOKEN", variables)
         self.assertIn("CONFLUENCE_PARENT_ID", variables)
 

@@ -150,6 +150,8 @@ activemq-data/
 # Environments
 .env
 .envrc
+config.yaml
+config.local.yaml
 .venv
 env/
 venv/

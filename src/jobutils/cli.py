@@ -10,6 +10,13 @@ from typing import List, Optional
 
 from .config import validate_config
 from .env import load_local_env
+from .gitops import (
+    GitOperationError,
+    commit as git_commit,
+    push as git_push,
+    push_mock,
+    status as git_status,
+)
 from .gtd import (
     DocumentError,
     DispatchError,
@@ -20,9 +27,11 @@ from .gtd import (
     dispatch,
 )
 from .metrics.catalog import DEFAULT_TAGS, IMPACT_LEVELS
+from .metrics.events import append_work_started, append_work_stopped
 from .metrics.reader import read_events
 from .metrics.reports import write_reports
 from .markdown.images import ClipboardError, paste_clipboard_image
+from .markdown.formatter import FormatError, format_file
 from .setup_workflow import SetupError, run_setup
 from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
 from .sync.engine import (
@@ -67,6 +76,9 @@ def _parser() -> argparse.ArgumentParser:
     subdocument_parser.add_argument("--line", type=int, required=True)
     markdown = subparsers.add_parser("markdown")
     markdown_subparsers = markdown.add_subparsers(dest="operation")
+    format_parser = markdown_subparsers.add_parser("format")
+    format_parser.add_argument("--path", required=True)
+    format_parser.add_argument("--check", action="store_true")
     paste_image_parser = markdown_subparsers.add_parser("paste-image")
     paste_image_parser.add_argument("--repo", default=".")
     paste_image_parser.add_argument("--file", required=True)
@@ -97,6 +109,16 @@ def _parser() -> argparse.ArgumentParser:
     catalog_parser.add_argument("--repo", default=".")
     review_parser = metrics_subparsers.add_parser("review")
     review_parser.add_argument("--repo", default=".")
+    start_parser = metrics_subparsers.add_parser("start")
+    start_parser.add_argument("--repo", default=".")
+    start_parser.add_argument("--gtd-id", required=True)
+    start_parser.add_argument("--at", default=None)
+    start_parser.add_argument("--machine-id", default=None)
+    stop_parser = metrics_subparsers.add_parser("stop")
+    stop_parser.add_argument("--repo", default=".")
+    stop_parser.add_argument("--gtd-id", required=True)
+    stop_parser.add_argument("--at", default=None)
+    stop_parser.add_argument("--machine-id", default=None)
     sync = subparsers.add_parser("sync")
     sync_subparsers = sync.add_subparsers(dest="operation")
     plan_parser = sync_subparsers.add_parser("plan")
@@ -108,6 +130,26 @@ def _parser() -> argparse.ArgumentParser:
     apply_parser.add_argument(
         "--adapter", choices=("memory", "atlassian"), default="memory"
     )
+    apply_parser.add_argument(
+        "--git-sync",
+        dest="git_sync",
+        action="store_true",
+        help="commit and push local sync metadata after apply",
+    )
+    apply_parser.add_argument(
+        "--no-git-sync",
+        dest="git_sync",
+        action="store_false",
+        help="apply externally without committing or pushing local sync metadata",
+    )
+    apply_parser.set_defaults(git_sync=None)
+    apply_parser.add_argument(
+        "--commit-message",
+        default="chore: synchronize GTD repository",
+    )
+    apply_parser.add_argument("--remote", default="origin")
+    apply_parser.add_argument("--branch", default="")
+    apply_parser.add_argument("--set-upstream", action="store_true")
     pull_parser = sync_subparsers.add_parser("pull")
     pull_parser.add_argument("--repo", default=".")
     pull_parser.add_argument(
@@ -126,6 +168,25 @@ def _parser() -> argparse.ArgumentParser:
     rebind_parser.add_argument("--url", default=None)
     rebind_parser.add_argument("--parent-id", default=None)
     sync_subparsers.add_parser("status").add_argument("--repo", default=".")
+    git = subparsers.add_parser("git")
+    git_subparsers = git.add_subparsers(dest="operation")
+    git_status_parser = git_subparsers.add_parser("status")
+    git_status_parser.add_argument("--repo", default=".")
+    git_commit_parser = git_subparsers.add_parser("commit")
+    git_commit_parser.add_argument("--repo", default=".")
+    git_commit_parser.add_argument("--message", required=True)
+    git_push_parser = git_subparsers.add_parser("push-mock")
+    git_push_parser.add_argument("--repo", default=".")
+    git_push_parser.add_argument("--remote", default="mock-origin")
+    git_push_parser.add_argument("--branch", default="")
+    git_push_parser.add_argument(
+        "--remote-url", default="mock://github/local-gtd-repository"
+    )
+    git_real_push_parser = git_subparsers.add_parser("push")
+    git_real_push_parser.add_argument("--repo", default=".")
+    git_real_push_parser.add_argument("--remote", default="origin")
+    git_real_push_parser.add_argument("--branch", default="")
+    git_real_push_parser.add_argument("--set-upstream", action="store_true")
     config = subparsers.add_parser("config")
     config_subparsers = config.add_subparsers(dest="operation")
     config_validate_parser = config_subparsers.add_parser("validate")
@@ -188,6 +249,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         except (ClipboardError, OSError, ValueError) as error:
             print("IMAGE: paste failed: {}".format(error), file=sys.stderr)
             return 1
+    if args.domain == "markdown" and args.operation == "format":
+        try:
+            changed = format_file(Path(args.path), check=args.check)
+            if args.check and changed:
+                print("MARKDOWN: formatting required: {}".format(args.path), file=sys.stderr)
+                return 1
+            if args.check:
+                print("ok: {}".format(args.path))
+                return 0
+            print("markdown formatted: {}".format(args.path))
+            return 0
+        except (FormatError, OSError, ValueError) as error:
+            print("MARKDOWN: format failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "metrics" and args.operation == "report":
         formats = [value.strip() for value in args.format.split(",") if value.strip()]
         output_dir = Path(args.output_dir) if args.output_dir else None
@@ -202,6 +277,44 @@ def main(argv: Optional[List[str]] = None) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1 if errors else 0
+    if args.domain == "git":
+        try:
+            repo = Path(args.repo)
+            if args.operation == "status":
+                print(git_status(repo), end="")
+                return 0
+            if args.operation == "commit":
+                print(json.dumps(git_commit(repo, args.message), sort_keys=True))
+                return 0
+            if args.operation == "push-mock":
+                print(
+                    json.dumps(
+                        push_mock(
+                            repo,
+                            remote=args.remote,
+                            branch=args.branch,
+                            remote_url=args.remote_url,
+                        ),
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.operation == "push":
+                print(
+                    json.dumps(
+                        git_push(
+                            repo,
+                            remote=args.remote,
+                            branch=args.branch,
+                            set_upstream=args.set_upstream,
+                        ),
+                        sort_keys=True,
+                    )
+                )
+                return 0
+        except GitOperationError as error:
+            print("GIT: operation failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "metrics" and args.operation == "catalog":
         print("Tags:")
         for tag in DEFAULT_TAGS:
@@ -238,6 +351,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         print("Data errors: {}".format(len(summary["read_errors"])))
         return 1 if summary["read_errors"] else 0
+    if args.domain == "metrics" and args.operation == "start":
+        append_work_started(
+            Path(args.repo),
+            args.gtd_id,
+            machine_id=args.machine_id,
+            occurred_at=args.at,
+        )
+        print("work started: {}".format(args.gtd_id))
+        return 0
+    if args.domain == "metrics" and args.operation == "stop":
+        append_work_stopped(
+            Path(args.repo),
+            args.gtd_id,
+            machine_id=args.machine_id,
+            occurred_at=args.at,
+        )
+        print("work stopped: {}".format(args.gtd_id))
+        return 0
     if args.domain == "sync" and args.operation == "plan":
         plan = create_plan(Path(args.repo))
         path = Path(args.output) if args.output else save_plan(Path(args.repo), plan)
@@ -260,6 +391,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.domain == "sync" and args.operation == "apply":
         try:
+            repo = Path(args.repo)
+            git_sync = (
+                args.git_sync
+                if args.git_sync is not None
+                else args.adapter == "atlassian"
+            )
+            if git_sync and git_status(repo).strip():
+                raise GitOperationError(
+                    "working tree must be clean before sync apply with Git synchronization"
+                )
             plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
             if args.adapter == "memory":
                 adapter = MemoryAdapter()
@@ -272,10 +413,24 @@ def main(argv: Optional[List[str]] = None) -> int:
                         ),
                     }
                 )
-            results = apply_plan(Path(args.repo), plan, adapter)
-            print(json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True))
+            results = apply_plan(repo, plan, adapter)
+            response = {"actions": results}
+            if git_sync:
+                commit_result = None
+                if git_status(repo).strip():
+                    commit_result = git_commit(repo, args.commit_message)
+                response["git"] = {
+                    "commit": commit_result,
+                    "push": git_push(
+                        repo,
+                        remote=args.remote,
+                        branch=args.branch,
+                        set_upstream=args.set_upstream,
+                    ),
+                }
+            print(json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
-        except (OSError, ValueError, SyncError, RuntimeError) as error:
+        except (OSError, ValueError, SyncError, RuntimeError, GitOperationError) as error:
             print("SYNC: apply failed: {}".format(error), file=sys.stderr)
             return 1
     if args.domain == "sync" and args.operation == "pull":

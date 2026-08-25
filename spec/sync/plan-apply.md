@@ -35,9 +35,15 @@ per-item error states without modifying any file or external resource.
 
 `sync apply` verifies the source hash before executing actions. A stale plan is
 rejected and must be regenerated. Applying a plan is idempotent when the
-external identity is already present. Successful application writes only
-external IDs, URLs, versions, and hashes back to front matter; credentials are
-never written.
+external identity is already present. Successful application writes resolved
+non-secret routing defaults, external IDs, URLs, versions, and hashes back to
+front matter; credentials are never written.
+
+For the Atlassian adapter, `sync apply` also commits the generated Markdown
+and `.jobutils` synchronization state and performs a real Git push to the
+configured remote. The command requires a clean worktree before the external
+request and stops with the local commit preserved if the push fails. The
+`--no-git-sync` option is available for tests and controlled recovery.
 
 Confluence actions include a local `parent_path` when a child document has a
 parent Markdown file. Apply orders parent actions before children and passes a
@@ -53,6 +59,9 @@ the apply before the child request is sent.
 The adapter boundary supports a deterministic memory adapter for tests and an
 HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
 
+Each successful action records `sync_applied` in the repository's append-only
+metric event log. An adapter failure records `sync_error` before apply stops.
+
 Classic Vim exposes the same workflow through `:GtdSyncPlan`,
 `:GtdSyncApply [plan]`, `:GtdSyncPull`, and `:GtdSyncStatus`. Apply and pull
 require interactive confirmation; omitting the apply path selects the newest
@@ -65,7 +74,10 @@ public Markdown body. If only one side changed, that side is accepted. If both
 local and external content changed, the public body receives standard conflict
 markers (`<<<<<<< local`, `=======`, `>>>>>>> external`) and the command
 reports a conflict without silently choosing a side. The local Implementation
-Note is preserved below the merged public body.
+Note is preserved below the merged public body. Remote Jira title, issue type,
+parent key, and configured Progress Comment values are materialized in the
+Markdown representation after a clean pull. Pulls and conflicts are recorded
+as `sync_pulled` and `sync_conflict` events.
 
 ## Rendering rules
 

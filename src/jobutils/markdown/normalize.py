@@ -98,8 +98,10 @@ def parse_document(path: str) -> MarkdownDocument:
             "confluence_version",
             "jira_progress_comment_field",
             "sync_hash",
+            "references",
         )
     }
+    metadata["references"] = frontmatter.list_value(lines, "references")
     return MarkdownDocument(str(path), metadata, body, public_body, implementation_note)
 
 

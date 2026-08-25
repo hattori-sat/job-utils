@@ -50,12 +50,33 @@ class SetupProfileTests(unittest.TestCase):
             ensure_shell_profile(profile, root / ".local" / "bin", "posix")
             first_vimrc = vimrc.read_text(encoding="utf-8")
             first_profile = profile.read_text(encoding="utf-8")
+            self.assertIn('" >>> job-utils setup >>>', first_vimrc)
+            self.assertNotIn("# >>> job-utils setup >>>", first_vimrc)
             ensure_vimrc_registration(
                 vimrc, snippet, "/opt/job-utils/.venv/bin/python"
             )
             ensure_shell_profile(profile, root / ".local" / "bin", "posix")
             self.assertEqual(vimrc.read_text(encoding="utf-8"), first_vimrc)
             self.assertEqual(profile.read_text(encoding="utf-8"), first_profile)
+
+    def test_vimrc_registration_repairs_legacy_shell_markers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vimrc = root / ".vimrc"
+            vimrc.write_text(
+                "# >>> job-utils setup >>>\n"
+                "execute 'source ' . fnameescape('/old/snippet.vim')\n"
+                "# <<< job-utils setup <<<\n",
+                encoding="utf-8",
+            )
+            snippet = root / "vim-config.vim"
+
+            ensure_vimrc_registration(vimrc, snippet, "/opt/job-utils/.venv/bin/python")
+
+            content = vimrc.read_text(encoding="utf-8")
+            self.assertNotIn("# >>> job-utils setup >>>", content)
+            self.assertNotIn("# <<< job-utils setup <<<", content)
+            self.assertIn('" >>> job-utils setup >>>', content)
 
     def test_user_wrappers_use_the_job_utils_virtual_environment(self):
         with tempfile.TemporaryDirectory() as directory:
