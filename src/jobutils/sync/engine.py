@@ -58,17 +58,26 @@ def _validate_external_url(value: Optional[str]) -> Optional[str]:
 def _atomic_frontmatter_update(path: Path, updates: Dict[str, str]) -> None:
     """Apply scalar front matter updates through a same-directory replacement."""
 
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if frontmatter.bounds(lines) is None:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        original = handle.read()
+    lines = original.splitlines()
+    location = frontmatter.bounds(lines)
+    if location is None:
         raise SyncError("managed Markdown requires YAML front matter")
+    for line in lines[location[0] + 1 : location[1]]:
+        if line.strip() and not re.match(r"^[A-Za-z_][A-Za-z0-9_-]*\s*:", line):
+            raise SyncError("managed Markdown has invalid YAML front matter")
     for key, value in updates.items():
         frontmatter.set_value(lines, key, value)
+    line_ending = "\r\n" if "\r\n" in original else "\n"
+    trailing = original[len(original.rstrip("\r\n")) :]
+    rendered = line_ending.join(lines) + trailing
     descriptor, temporary = tempfile.mkstemp(
         prefix=".jobutils-rebind-", dir=str(path.parent)
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write("\n".join(lines).rstrip("\n") + "\n")
+            handle.write(rendered)
         os.replace(temporary, path)
     except Exception:
         try:
@@ -102,14 +111,12 @@ def rebind(
     )
     if kind == "jira":
         updates = {"jira_key": identity}
-        if safe_url is not None:
-            updates["jira_url"] = safe_url
+        updates["jira_url"] = safe_url or ""
         if safe_parent is not None:
             updates["jira_parent_key"] = safe_parent
     else:
         updates = {"confluence_page_id": identity}
-        if safe_url is not None:
-            updates["confluence_url"] = safe_url
+        updates["confluence_url"] = safe_url or ""
         if safe_parent is not None:
             updates["confluence_parent_id"] = safe_parent
     _atomic_frontmatter_update(path, updates)
@@ -231,7 +238,9 @@ def create_plan(repo_root: Path) -> Dict:
     return {
         "plan_id": str(uuid.uuid4()),
         "created_at": datetime.utcnow().isoformat() + "Z",
-        "source_hash": _source_hash(repo_root, published_paths),
+        "source_hash": _source_hash(
+            repo_root, _source_paths_for_actions(repo_root, actions, published_paths)
+        ),
         "actions": _order_actions(actions),
     }
 
@@ -415,6 +424,29 @@ def _infer_nested_parent_path(repo_root: Path, path: Path) -> Optional[str]:
     return str(candidate.relative_to(repo_root)).replace("\\", "/")
 
 
+def _source_paths_for_actions(
+    repo_root: Path, actions: List[Dict], base_paths: List[Path]
+) -> List[Path]:
+    """Include existing local parent files in the plan's source hash."""
+
+    paths = list(base_paths)
+    for action in actions:
+        parent_path = action.get("parent_path")
+        if not parent_path:
+            continue
+        valid_parent = (
+            _is_safe_document_path(parent_path)
+            if action["kind"] == "confluence"
+            else _is_safe_task_path(parent_path)
+        )
+        if not valid_parent:
+            raise SyncError("unsafe {} parent path: {}".format(action["kind"], parent_path))
+        parent = _managed_action_path(repo_root, parent_path)
+        if parent.is_file() and parent not in paths:
+            paths.append(parent)
+    return paths
+
+
 def _is_valid_payload(kind: str, payload: Dict) -> bool:
     """Return whether a plan payload has the fields its adapter consumes."""
 
@@ -492,7 +524,8 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
         _managed_action_path(repo_root, action["path"])
         for action in plan["actions"]
     ]
-    if _source_hash(repo_root, paths) != plan.get("source_hash"):
+    hash_paths = _source_paths_for_actions(repo_root, plan["actions"], paths)
+    if _source_hash(repo_root, hash_paths) != plan.get("source_hash"):
         raise SyncError("sync plan is stale; create a new plan")
     results = []
     created_external_ids: Dict[str, str] = {}

@@ -477,14 +477,14 @@ Objective.
             self.repo,
             "gtd_tasks/task.md",
             "jira",
-            "LIG-42",
-            "https://example.invalid/browse/LIG-42",
+            "DEMO-42",
+            "https://example.invalid/browse/DEMO-42",
         )
 
         self.assertEqual(result, path.resolve())
         text = path.read_text(encoding="utf-8")
-        self.assertIn("jira_key: 'LIG-42'", text)
-        self.assertIn("jira_url: 'https://example.invalid/browse/LIG-42'", text)
+        self.assertIn("jira_key: 'DEMO-42'", text)
+        self.assertIn("jira_url: 'https://example.invalid/browse/DEMO-42'", text)
 
     def test_rebind_updates_confluence_page_and_parent_identity(self):
         path = self.repo / "documents" / "guide.md"
@@ -497,17 +497,17 @@ Objective.
             self.repo,
             "documents/guide.md",
             "confluence",
-            "210632708",
-            "https://example.invalid/wiki/pages/210632708",
-            "parent-9",
+            "PAGE-42",
+            "https://example.invalid/wiki/pages/PAGE-42",
+            "PARENT-9",
         )
 
         text = path.read_text(encoding="utf-8")
-        self.assertIn("confluence_page_id: '210632708'", text)
+        self.assertIn("confluence_page_id: 'PAGE-42'", text)
         self.assertIn(
-            "confluence_url: 'https://example.invalid/wiki/pages/210632708'", text
+            "confluence_url: 'https://example.invalid/wiki/pages/PAGE-42'", text
         )
-        self.assertIn("confluence_parent_id: 'parent-9'", text)
+        self.assertIn("confluence_parent_id: 'PARENT-9'", text)
 
     def test_rebind_rejects_invalid_target_before_mutation(self):
         path = self.repo / "documents" / "guide.md"
@@ -535,9 +535,32 @@ Objective.
 
     def test_rebind_rejects_unmanaged_or_unsafe_paths(self):
         with self.assertRaisesRegex(SyncError, "unsafe Markdown path"):
-            rebind(self.repo, "README.md", "jira", "LIG-42")
+            rebind(self.repo, "README.md", "jira", "DEMO-42")
         with self.assertRaisesRegex(SyncError, "unsafe Markdown path"):
-            rebind(self.repo, "../outside.md", "jira", "LIG-42")
+            rebind(self.repo, "../outside.md", "jira", "DEMO-42")
+
+    def test_rebind_clears_old_url_when_a_new_url_is_not_supplied(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            "---\nkind: task\njira_key: 'OLD-1'\njira_url: 'https://example.invalid/old'\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+
+        rebind(self.repo, "gtd_tasks/task.md", "jira", "DEMO-42")
+
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("jira_key: 'DEMO-42'", text)
+        self.assertIn("jira_url: ''", text)
+
+    def test_rebind_rejects_malformed_front_matter_before_mutation(self):
+        path = self.repo / "documents" / "guide.md"
+        original = "---\nthis is not yaml\n---\n\n# Guide\n"
+        path.write_text(original, encoding="utf-8")
+
+        with self.assertRaisesRegex(SyncError, "invalid YAML"):
+            rebind(self.repo, "documents/guide.md", "confluence", "PAGE-42")
+
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
 
     def test_rebind_cli_updates_the_requested_file(self):
         path = self.repo / "documents" / "guide.md"
@@ -560,13 +583,13 @@ Objective.
                         "--kind",
                         "confluence",
                         "--external-id",
-                        "210632708",
+                        "PAGE-42",
                     ]
                 ),
                 0,
             )
         self.assertIn("documents/guide.md", output.getvalue())
-        self.assertIn("confluence_page_id: '210632708'", path.read_text())
+        self.assertIn("confluence_page_id: 'PAGE-42'", path.read_text())
 
     def test_jira_parent_is_resolved_when_parent_is_created_in_same_plan(self):
         parent = self.repo / "gtd_tasks" / "parent.md"
@@ -630,6 +653,27 @@ Objective.
 
         with self.assertRaisesRegex(SyncError, "cyclic Jira"):
             create_plan(self.repo)
+
+    def test_parent_identity_changes_make_a_plan_stale(self):
+        parent = self.repo / "gtd_tasks" / "parent.md"
+        child = self.repo / "gtd_tasks" / "child.md"
+        parent.write_text(
+            "---\nkind: task\ntitle: Parent\njira_key: 'DEMO-1'\n---\n\n# Summary\nParent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\nkind: task\ntitle: Child\npublish_jira: true\njira_project: DEMO\njira_parent_path: gtd_tasks/parent.md\n---\n\n# Summary\nChild\n",
+            encoding="utf-8",
+        )
+
+        plan = create_plan(self.repo)
+        parent.write_text(
+            parent.read_text(encoding="utf-8").replace("DEMO-1", "DEMO-2"),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(SyncError, "stale"):
+            apply_plan(self.repo, plan, MemoryAdapter())
 
     def test_sync_status_ignores_symlinked_plans(self):
         plans = self.repo / ".jobutils" / "sync" / "plans"

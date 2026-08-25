@@ -490,6 +490,7 @@ function! jobutils#gtd#sync_rebind(requested) abort
     echom 'GTD: sync rebind cancelled'
     return
   endif
+  update
   let l:args = 'sync rebind --path ' . shellescape(l:path)
         \ . ' --kind ' . shellescape(l:kind)
         \ . ' --external-id ' . shellescape(l:external_id)
@@ -505,6 +506,7 @@ function! jobutils#gtd#sync_rebind(requested) abort
     return
   endif
   call s:show_output(l:result.output)
+  call s:reload_current_buffer()
   echo 'GTD: sync rebind completed; create a new sync plan'
 endfunction
 
