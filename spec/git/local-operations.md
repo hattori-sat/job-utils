@@ -7,13 +7,22 @@ normal use.
 ## User-facing synchronization
 
 ```text
+jobutils sync update --repo REPOSITORY
 jobutils sync apply --repo REPOSITORY --plan PLAN --adapter atlassian
 jobutils sync check --repo REPOSITORY --adapter atlassian
 jobutils sync plan --repo REPOSITORY
 ```
 
+`sync update` performs a clean-worktree, fast-forward-only update from the
+configured Git remote. It never contacts Jira or Confluence. The Vim launcher
+runs it before opening the configured GTD repository; `:GtdSyncUpdate` is the
+manual recovery entry point.
+
 `sync check` refreshes Git remote-tracking data and current Jira/Confluence
-records, then writes an ignored observation. It never commits or pushes.
+records, then writes an ignored observation. It never pulls, commits, or
+pushes. The observation records whether Git is `in_sync`, `remote_ahead`,
+`local_ahead`, `diverged`, or `no_remote`; `remote_ahead` and `diverged` block
+planning until `sync update` succeeds.
 
 `sync plan` turns the observation into publish, import, or conflict actions.
 `sync apply` automatically commits pending local changes together with the

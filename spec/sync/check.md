@@ -3,10 +3,10 @@
 ## Purpose
 
 `sync check` is a read-only refresh operation. It refreshes Git remote-tracking
-metadata and reads the public Markdown body, the last synchronized base
+metadata without changing the worktree and reads the public Markdown body, the last synchronized base
 snapshot, and the current external body, then reports their relationship. It
 writes only the latest ignored observation under
-`.jobutils/sync/observations/latest.json`; it does not write plans, front
+`.jobutils/sync/observations/latest.json`; it does not pull or write plans, front
 matter, base snapshots, Markdown, Jira, or Confluence, and it never commits or
 pushes.
 
@@ -45,6 +45,8 @@ The CLI prints one JSON object:
     "performed": true,
     "remote": "origin",
     "branch": "main",
+    "state": "in_sync",
+    "local_revision": "...",
     "remote_revision": "..."
   },
   "items": [
@@ -59,9 +61,9 @@ The CLI prints one JSON object:
 }
 ```
 
-The process exits with status 1 when one or more items are in `error`; drift
-states themselves are reported successfully. The latest observation is the
-input to `sync plan`. An external-only change becomes an `import` action, a
-two-sided change becomes a `conflict` action, and a local-only change remains
-an external update. Use `--no-git-fetch` only when the Git remote is
-intentionally unavailable.
+The process exits with status 1 when one or more items are in `error`, or when
+Git is `remote_ahead` or `diverged`. The latest observation is the input to
+`sync plan`. An external-only change becomes an `import` action, a two-sided
+change becomes a `conflict` action, and a local-only change remains an external
+update. Use `--no-git-fetch` only when the Git remote is intentionally
+unavailable.

@@ -527,6 +527,7 @@ function! jobutils#gtd#sync_check() abort
 endfunction
 
 function! jobutils#gtd#sync_help() abort
+  echo ':GtdSyncUpdate            fast-forward the local Git repository'
   echo ':GtdSyncPlan              create a reviewable synchronization plan'
   echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
   echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'

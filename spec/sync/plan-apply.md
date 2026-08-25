@@ -29,16 +29,18 @@ credentials.
 The local `sync status` operation reports plan, base-snapshot, pending-action,
 and conflict counts from `.jobutils/` without contacting an external service.
 
-The read-only `sync check` operation refreshes Git remote-tracking metadata,
-fetches current external bodies, and compares them with the local public body
+The read-only `sync check` operation refreshes Git remote-tracking metadata
+without changing the worktree, fetches current external bodies, and compares them with the local public body
 and the last synchronized base. It records an ignored observation and reports
 clean, local-only, external-only, converged, conflict, unknown, and per-item
 error states without modifying Markdown or any external resource.
 
 ## Apply
 
-`sync apply` verifies the source hash before executing actions. A stale plan is
-rejected and must be regenerated. Applying a plan is idempotent when the
+`sync apply` verifies the source hash and current Git state before executing
+actions. A stale plan is rejected and must be regenerated. It also refetches
+the external records represented by the observation and stops if their public
+body changed after `sync check`. Applying a plan is idempotent when the
 external identity is already present. Successful application writes resolved
 non-secret routing defaults, external IDs, URLs, versions, and hashes back to
 front matter; credentials are never written.
@@ -67,7 +69,7 @@ HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
 Each successful action records `sync_applied` in the repository's append-only
 metric event log. An adapter failure records `sync_error` before apply stops.
 
-Classic Vim exposes the same workflow through `:GtdSyncCheck`,
+Classic Vim exposes the same workflow through `:GtdSyncUpdate`, `:GtdSyncCheck`,
 `:GtdSyncPlan`, `:GtdSyncApply [plan]`, and `:GtdSyncStatus`. Check and apply
 require interactive confirmation; omitting the apply path selects the newest
 local plan.
@@ -84,7 +86,9 @@ Note, records `sync_conflict`, and stops without writing Jira or Confluence.
 The user resolves the markers in Vim, runs `sync check` and `sync plan` again,
 and applies the reviewed plan.
 
-Separate Git pull and push commands are not part of the normal user workflow.
+The launcher and `:GtdSyncUpdate` perform only fast-forward Git updates.
+`GtdSyncApply` owns the final commit and push; no separate push command is part
+of the normal user workflow.
 
 ## Rendering rules
 

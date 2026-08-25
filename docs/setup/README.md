@@ -63,9 +63,10 @@ shown in the setup output.
 
 - `jobutils` runs the Python CLI using this checkout's virtual environment.
 - `jobutils-python` runs that same Python interpreter for manual work.
-- `jobutils-vim` starts Vim with the configured environment. With no file
-  argument, it opens the configured GTD repository's `gtd.md`; an explicit
-  file argument is passed through unchanged.
+- `jobutils-vim` updates the configured GTD repository with a fast-forward-only
+  Git update before starting Vim. With no file argument, it opens the
+  configured repository's `gtd.md`; an explicit file argument is passed
+  through unchanged. A dirty or diverged repository stops before Vim opens.
 - `jobutils-activate` is an optional helper for manual Python commands.
 
 The wrappers use absolute paths, so the CLI and Vim do not depend on the
@@ -117,6 +118,7 @@ Available commands include:
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
 - `:GtdMetricsHelp` — show metrics commands;
+- `:GtdSyncUpdate` / `:gtdsyncupdate` — fast-forward the GTD Git repository for manual recovery;
 - `:GtdSyncCheck` — confirm a Git/Jira/Confluence refresh and inspect drift;
 - `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan from the latest check;
 - `:GtdSyncApply [plan]` — apply the newest or named plan, commit local sync state, and push after confirmation;
@@ -172,6 +174,7 @@ jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026
 jobutils markdown paste-image --repo /absolute/path/to/your-gtd-repository --file documents/guide.md --name diagram
 jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md
 jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md --check
+jobutils sync update --repo /absolute/path/to/your-gtd-repository
 jobutils sync check --repo /absolute/path/to/your-gtd-repository --adapter atlassian
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 jobutils sync status --repo /absolute/path/to/your-gtd-repository

@@ -34,12 +34,12 @@
 - `gitops.fetch()` returns `local_revision` and a state of `in_sync`, `remote_ahead`, `local_ahead`, or `diverged` when the remote branch is available.
 - `jobutils sync update --repo REPO [--remote REMOTE] [--branch BRANCH]` performs the existing fast-forward-only pull and prints JSON.
 
-- [ ] **Step 1: Write failing tests** for `sync update`, remote-ahead detection, and divergent history.
-- [ ] **Step 2: Run the focused tests** and confirm the new command/state assertions fail.
-- [ ] **Step 3: Implement the minimal Git state calculation** using Git subprocesses without a shell; preserve current fetch/pull safety checks.
-- [ ] **Step 4: Add the `sync update` parser and handler** using the existing `pull()` helper; return a nonzero status with a readable recovery error when the worktree is dirty or history is not fast-forwardable.
-- [ ] **Step 5: Run the focused Git and CLI tests** and confirm they pass.
-- [ ] **Step 6: Commit:** `feat: add safe sync update operation`.
+- [x] **Step 1: Write failing tests** for `sync update`, remote-ahead detection, and divergent history.
+- [x] **Step 2: Run the focused tests** and confirm the new command/state assertions fail.
+- [x] **Step 3: Implement the minimal Git state calculation** using Git subprocesses without a shell; preserve current fetch/pull safety checks.
+- [x] **Step 4: Add the `sync update` parser and handler** using the existing `pull()` helper; return a nonzero status with a readable recovery error when the worktree is dirty or history is not fast-forwardable.
+- [x] **Step 5: Run the focused Git and CLI tests** and confirm they pass.
+- [x] **Step 6: Commit:** `feat: add safe sync update operation`.
 
 ### Task 2: Block stale Git observations and revalidate external state
 
@@ -54,12 +54,12 @@
 - `sync apply` performs a final Git fetch before external writes when Git synchronization is enabled.
 - `apply_plan()` re-fetches each existing external record represented by the observation and rejects a plan whose external body changed after check.
 
-- [ ] **Step 1: Write failing tests** for plan rejection after remote Git advancement, apply rejection before external mutation when Git is stale, and apply rejection when Jira/Confluence changes after check.
-- [ ] **Step 2: Run the focused tests** and confirm they fail.
-- [ ] **Step 3: Implement observation Git-state recording and plan blocking** while preserving offline/memory test behavior when no Git remote is configured.
-- [ ] **Step 4: Implement apply preflight checks** so stale Git or external state stops before any external write.
-- [ ] **Step 5: Run the focused synchronization tests** and confirm they pass.
-- [ ] **Step 6: Commit:** `fix: reject stale synchronization inputs`.
+- [x] **Step 1: Write failing tests** for plan rejection after remote Git advancement, apply rejection before external mutation when Git is stale, and apply rejection when Jira/Confluence changes after check.
+- [x] **Step 2: Run the focused tests** and confirm they fail.
+- [x] **Step 3: Implement observation Git-state recording and plan blocking** while preserving offline/memory test behavior when no Git remote is configured.
+- [x] **Step 4: Implement apply preflight checks** so stale Git or external state stops before any external write.
+- [x] **Step 5: Run the focused synchronization tests** and confirm they pass.
+- [x] **Step 6: Commit:** `fix: reject stale synchronization inputs`.
 
 ### Task 3: Add automatic startup update and manual Vim recovery
 
@@ -78,12 +78,12 @@
 - `:GtdSyncUpdate` and `:gtdsyncupdate` perform the same fast-forward-only operation for manual recovery and reload the current buffer after success.
 - Dirty worktrees and divergent history stop with an actionable error; no Jira/Confluence request is made.
 
-- [ ] **Step 1: Write failing wrapper and Vim runtime tests** for startup update, command registration, lowercase alias, success reload, and failure display.
-- [ ] **Step 2: Run the focused wrapper/Vim tests** and confirm they fail.
-- [ ] **Step 3: Implement startup update** in the checked-in POSIX/PowerShell wrappers and generated setup wrappers using the job-utils virtual-environment Python.
-- [ ] **Step 4: Implement `GtdSyncUpdate`** with confirmation-free local Git behavior, modified-buffer protection, output/error reporting, and buffer refresh.
-- [ ] **Step 5: Run the focused wrapper/Vim tests** and confirm they pass.
-- [ ] **Step 6: Commit:** `feat: update GTD repository before Vim sync`.
+- [x] **Step 1: Write failing wrapper and Vim runtime tests** for startup update, command registration, lowercase alias, success reload, and failure display.
+- [x] **Step 2: Run the focused wrapper/Vim tests** and confirm they fail.
+- [x] **Step 3: Implement startup update** in the checked-in POSIX/PowerShell wrappers and generated setup wrappers using the job-utils virtual-environment Python.
+- [x] **Step 4: Implement `GtdSyncUpdate`** with confirmation-free local Git behavior, modified-buffer protection, output/error reporting, and buffer refresh.
+- [x] **Step 5: Run the focused wrapper/Vim tests** and confirm they pass.
+- [x] **Step 6: Commit:** `feat: update GTD repository before Vim sync`.
 
 ### Task 4: Document and verify the complete workflow
 
@@ -98,12 +98,12 @@
 - Modify: `vim/plugin/jobutils_gtd.vim`
 - Test: `tests/test_setup_docs.py`
 
-- [ ] **Step 1: Update the user-facing workflow** to distinguish automatic startup update, manual `GtdSyncUpdate`, read-only check, and apply-owned commit/push.
-- [ ] **Step 2: Add `GtdSyncUpdate` to synchronization help** and remove any wording that implies check performs pull.
-- [ ] **Step 3: Sanitize the documentation** for standalone readers; exclude conversation residue, real project identifiers, credentials, and private paths.
-- [ ] **Step 4: Run the documentation tests, full test suite, shell syntax checks, Python compilation with a temporary cache, and `git diff --check`.
-- [ ] **Step 5: Scan the public diff for secrets, personal paths, and unrelated files.
-- [ ] **Step 6: Commit:** `docs: document startup Git synchronization`.
+- [x] **Step 1: Update the user-facing workflow** to distinguish automatic startup update, manual `GtdSyncUpdate`, read-only check, and apply-owned commit/push.
+- [x] **Step 2: Add `GtdSyncUpdate` to synchronization help** and remove any wording that implies check performs pull.
+- [x] **Step 3: Sanitize the documentation** for standalone readers; exclude conversation residue, real project identifiers, credentials, and private paths.
+- [x] **Step 4: Run the documentation tests, full test suite, shell syntax checks, Python compilation with a temporary cache, and `git diff --check`.
+- [x] **Step 5: Scan the public diff for secrets, personal paths, and unrelated files.
+- [x] **Step 6: Commit:** `docs: document startup Git synchronization`.
 
 ## Self-review checklist
 

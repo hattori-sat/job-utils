@@ -26,6 +26,7 @@ class SetupDocumentationTests(unittest.TestCase):
         self.assertNotIn(":GtdStop", usage)
         self.assertNotIn(":GtdGitPush", usage)
         self.assertIn(":GtdSyncCheck", usage)
+        self.assertIn(":GtdSyncUpdate", usage)
         self.assertIn(":GtdSyncPlan", usage)
         self.assertIn(":GtdSyncApply", usage)
         self.assertNotIn("sync pull", usage)

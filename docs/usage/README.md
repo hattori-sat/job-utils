@@ -12,8 +12,9 @@ From any directory, run:
 jobutils-vim
 ```
 
-With no file argument, this opens the configured repository's `gtd.md`. To
-open another file explicitly, pass its path:
+Before Vim opens, the wrapper performs a fast-forward-only update from the
+configured GitHub remote. With no file argument, it then opens the configured
+repository's `gtd.md`. To open another file explicitly, pass its path:
 
 ```text
 jobutils-vim /path/to/gtd/documents/guide.md
@@ -54,10 +55,17 @@ to the configured Git remote. Implementation Notes remain local.
 
 ## Synchronize before editing
 
-Run `:GtdSyncCheck` before planning work on another computer or after an
+The `jobutils-vim` launcher updates Git before opening Vim. If another device
+pushes changes while Vim is already open, run `:GtdSyncUpdate` before planning.
+It performs a fast-forward-only update and stops if the worktree is dirty or
+the histories diverged.
+
+Run `:GtdSyncCheck` after Git is current and before planning work after an
 external Jira/Confluence edit. Confirm the refresh prompt. It updates Git's
 remote-tracking information, fetches current Jira and Confluence records, and
-writes an ignored observation without committing or pushing.
+writes an ignored observation without committing, pulling, or pushing. A
+remote-ahead or diverged Git state blocks the observation until
+`:GtdSyncUpdate` succeeds.
 
 Then run:
 
@@ -71,9 +79,11 @@ external record changed, apply writes conflict markers into the Markdown file
 and stops without an external write. Resolve the markers in Vim, save, run
 `:GtdSyncCheck` and `:GtdSyncPlan` again, then apply the reviewed plan.
 
-There is no separate GitHub, Jira, or Confluence pull command in the normal
-workflow. `:GtdSyncApply` commits once after all approved actions and pushes
-that commit.
+There is no separate push command in the normal workflow. `:GtdSyncApply`
+rechecks Git and the external record before writing, then commits once after
+all approved actions and pushes that commit. `:GtdSyncUpdate` is the only
+explicit Git update command and is intended for startup recovery or a remote
+change detected during an open Vim session.
 
 ## Review and reports
 
