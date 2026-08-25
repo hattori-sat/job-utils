@@ -113,6 +113,7 @@ Available commands include:
 - `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
 - `:GtdSyncCheck` — inspect external drift without changing files;
 - `:GtdSyncHelp` — show synchronization commands;
+- `:PasteImage [alt text]` / `:pasteimage` — save a clipboard PNG under `assets/` and insert its Markdown link;
 - `:JobutilsProjectRoot` — show the nearest CMake project root.
 - `:JobutilsCMake` — open the nearest `CMakeLists.txt` in a split.
 
@@ -157,6 +158,7 @@ jobutils gtd subdocument --repo /absolute/path/to/your-gtd-repository \
   --parent documents/<parent>.md --line 14
 jobutils metrics catalog --repo /absolute/path/to/your-gtd-repository
 jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026-01-01 --to 2026-12-31 --format html,csv,svg,json
+jobutils markdown paste-image --repo /absolute/path/to/your-gtd-repository --file documents/guide.md --name diagram
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
 ```
@@ -191,6 +193,31 @@ Afterward, run `sync plan` again and review the resulting actions.
 Generated reports are placed under `.jobutils/output/<generation-date>/<period>/`
 and are ignored by Git. Metric event JSONL remains source data and should be
 committed with the GTD Repository.
+
+## Paste a screenshot into Markdown
+
+Copy a PNG screenshot to the system clipboard, open the target Markdown file
+in Vim, and run `:PasteImage` or `:PasteImage diagram`. The image is saved
+under `assets/` next to the current Markdown file, and a relative link such as
+`![diagram](assets/guide-a1b2c3d4.png)` is inserted below the cursor. The
+lowercase `:pasteimage` form is also available.
+
+The Python equivalent is:
+
+```text
+jobutils markdown paste-image --file /absolute/path/to/guide.md --name diagram
+```
+
+Clipboard access uses the first available provider for the platform:
+
+- macOS: `pngpaste`, then the built-in `osascript` fallback;
+- Windows: `powershell` or `pwsh` with Windows Forms and Drawing;
+- Linux: Wayland `wl-paste`, then X11 `xclip`.
+
+Setup does not install clipboard tools automatically. If none is available,
+the command reports the missing provider and the supported alternatives. The
+paste command only creates a local image file and Markdown link; it does not
+upload the image to Jira or Confluence and does not run Git push.
 
 To create a child task, open the parent task Markdown, add a bullet under
 `# Subtasks`, and run `:GtdSubtask` on that bullet. The current file is used as
