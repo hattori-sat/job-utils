@@ -447,7 +447,8 @@ def _storage_inline(node: object) -> str:
         if not target:
             attachments = _find_nodes(node, "ri:attachment")
             target = attachments[0].attrs.get("ri:filename", "") if attachments else ""
-        return "![{}]({})".format(node.attrs.get("ac:alt", ""), target)
+        alt = node.attrs.get("ac:alt", "")
+        return "![{}]({})".format(alt, target) if _is_safe_url(target) else alt
     return "".join(_storage_inline(child) for child in node.children)
 
 
@@ -628,7 +629,9 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
             continue
         if item_type == "image":
             attrs = item.get("attrs", {})
-            output.append("![{}]({})".format(attrs.get("alt", ""), attrs.get("url", "")))
+            alt = attrs.get("alt", "")
+            target = attrs.get("url", "")
+            output.append("![{}]({})".format(alt, target) if _is_safe_url(target) else alt)
             continue
         text = item.get("text", "")
         marks = item.get("marks", []) or []

@@ -57,9 +57,29 @@ Useful **context**.
 
         markdown = storage_to_markdown(
             '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
+            '<ac:image ac:alt="bad-image"><ri:url ri:value="javascript:alert(1)" /></ac:image>'
         )
         self.assertIn("[safe](https://example.com)", markdown)
         self.assertNotIn("javascript:", markdown)
+        self.assertIn("bad-image", markdown)
+
+        adf_markdown = adf_to_markdown(
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {
+                                "type": "image",
+                                "attrs": {"alt": "bad-image", "url": "javascript:alert(1)"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(adf_markdown, "bad-image\n")
 
     def test_table_pipes_order_start_and_code_language_survive_round_trip(self):
         source = """3. third
