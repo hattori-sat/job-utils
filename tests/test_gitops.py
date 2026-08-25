@@ -209,6 +209,56 @@ class GitOpsTests(unittest.TestCase):
         self.assertFalse((self.repo / "remote.md").exists())
         self.assertEqual(status(self.repo), "")
 
+        self.assertEqual(result["state"], "remote_ahead")
+
+    def test_fetch_reports_local_ahead_state(self):
+        remote = Path(self.tempdir.name) / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("initial\n", encoding="utf-8")
+        commit(self.repo, "test: seed local-ahead repository")
+        push(self.repo)
+        (self.repo / "local.md").write_text("local\n", encoding="utf-8")
+        commit(self.repo, "test: add local note")
+
+        result = fetch(self.repo)
+
+        self.assertEqual(result["state"], "local_ahead")
+
+    def test_pull_rejects_divergent_history(self):
+        infrastructure = tempfile.TemporaryDirectory()
+        self.addCleanup(infrastructure.cleanup)
+        root = Path(infrastructure.name)
+        remote = root / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("initial\n", encoding="utf-8")
+        commit(self.repo, "test: seed divergent repository")
+        push(self.repo)
+
+        peer = root / "peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True)
+        subprocess.run(["git", "config", "user.name", "Peer Test"], cwd=peer, check=True)
+        (peer / "peer.md").write_text("peer\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: add peer note"], cwd=peer, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        (self.repo / "local.md").write_text("local\n", encoding="utf-8")
+        commit(self.repo, "test: add divergent local note")
+
+        with self.assertRaisesRegex(GitOperationError, "fast-forward"):
+            pull(self.repo)
+
 
 
 if __name__ == "__main__":

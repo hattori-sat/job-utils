@@ -137,6 +137,38 @@ Private content.
         ).strip()
         self.assertEqual(remote_revision, local_revision)
 
+    def test_cli_sync_update_fast_forwards_and_returns_git_result(self):
+        repo = Path(self.tempdir.name) / "update-repo"
+        repo.mkdir()
+        remote = Path(self.tempdir.name) / "update-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "config", "user.email", "local-test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        (repo / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: seed update repository"], cwd=repo, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repo, check=True)
+
+        peer = Path(self.tempdir.name) / "update-peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True)
+        subprocess.run(["git", "config", "user.name", "Peer Test"], cwd=peer, check=True)
+        (peer / "remote.md").write_text("remote\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: add remote file"], cwd=peer, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["sync", "update", "--repo", str(repo)])
+
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertTrue(response["git"]["performed"])
+        self.assertTrue((repo / "remote.md").is_file())
+
     def test_cli_sync_apply_commits_dirty_worktree_once_after_external_apply(self):
         repo = Path(self.tempdir.name) / "repo"
         repo.mkdir()

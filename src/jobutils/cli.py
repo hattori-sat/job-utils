@@ -14,6 +14,7 @@ from .gitops import (
     GitOperationError,
     commit as git_commit,
     push as git_push,
+    pull as git_pull,
     status as git_status,
 )
 from .gtd import (
@@ -108,6 +109,10 @@ def _parser() -> argparse.ArgumentParser:
     review_parser.add_argument("--repo", default=".")
     sync = subparsers.add_parser("sync")
     sync_subparsers = sync.add_subparsers(dest="operation")
+    update_parser = sync_subparsers.add_parser("update")
+    update_parser.add_argument("--repo", default=".")
+    update_parser.add_argument("--remote", default="origin")
+    update_parser.add_argument("--branch", default="")
     plan_parser = sync_subparsers.add_parser("plan")
     plan_parser.add_argument("--repo", default=".")
     plan_parser.add_argument("--output", default=None)
@@ -301,6 +306,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.domain == "sync" and args.operation == "status":
         print(json.dumps(sync_status(Path(args.repo)), sort_keys=True))
         return 0
+    if args.domain == "sync" and args.operation == "update":
+        try:
+            result = git_pull(
+                Path(args.repo), remote=args.remote, branch=args.branch
+            )
+            print(json.dumps({"git": result}, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        except (GitOperationError, OSError) as error:
+            print("SYNC: update failed: {}".format(error), file=sys.stderr)
+            return 1
     if args.domain == "sync" and args.operation == "apply":
         try:
             repo = Path(args.repo)

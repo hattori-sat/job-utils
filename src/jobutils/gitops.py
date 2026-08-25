@@ -45,6 +45,25 @@ def _run(repo_root: Path, arguments: List[str]) -> subprocess.CompletedProcess:
     )
 
 
+def _is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
+    """Return whether one revision is an ancestor of another."""
+
+    result = _run(repo_root, ["merge-base", "--is-ancestor", ancestor, descendant])
+    return result.returncode == 0
+
+
+def _revision_state(repo_root: Path, local: str, remote: str) -> str:
+    """Classify the local branch relative to its fetched remote branch."""
+
+    if local == remote:
+        return "in_sync"
+    if _is_ancestor(repo_root, local, remote):
+        return "remote_ahead"
+    if _is_ancestor(repo_root, remote, local):
+        return "local_ahead"
+    return "diverged"
+
+
 def status(repo_root: Path) -> str:
     """Return porcelain status for the selected local repository."""
 
@@ -279,11 +298,24 @@ def fetch(repo_root: Path, remote: str = "origin") -> Dict[str, object]:
                 or "could not determine fetched remote revision"
             )
         )
+    local_revision = _run(repo_root, ["rev-parse", "HEAD"])
+    if local_revision.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                local_revision.stderr.strip() or "could not determine local revision"
+            )
+        )
+    local_revision_text = local_revision.stdout.strip()
+    remote_revision_text = remote_revision.stdout.strip()
     return {
         "performed": True,
         "remote": selected_remote,
         "branch": selected_branch,
-        "remote_revision": remote_revision.stdout.strip(),
+        "local_revision": local_revision_text,
+        "remote_revision": remote_revision_text,
+        "state": _revision_state(
+            repo_root, local_revision_text, remote_revision_text
+        ),
         "output": _redact_git_output(
             "\n".join(value for value in (result.stdout, result.stderr) if value)
         ).strip(),
