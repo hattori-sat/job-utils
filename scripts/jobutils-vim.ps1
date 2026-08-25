@@ -9,4 +9,12 @@ $env:PYTHONPATH = (Join-Path $jobUtilsRoot "src") + [IO.Path]::PathSeparator + $
 if (-not (Get-Command vim -ErrorAction SilentlyContinue)) {
   throw "jobutils-vim: Vim was not found"
 }
-& vim @args
+$vimArgs = @args
+if ($vimArgs.Count -eq 0) {
+  if (-not [string]::IsNullOrEmpty($env:GTD_ROOT) -and (Test-Path (Join-Path $env:GTD_ROOT "gtd.md"))) {
+    $vimArgs = @(Join-Path $env:GTD_ROOT "gtd.md")
+  } elseif (Test-Path "gtd.md") {
+    $vimArgs = @((Resolve-Path "gtd.md").Path)
+  }
+}
+& vim @vimArgs

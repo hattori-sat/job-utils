@@ -63,11 +63,21 @@ shown in the setup output.
 
 - `jobutils` runs the Python CLI using this checkout's virtual environment.
 - `jobutils-python` runs that same Python interpreter for manual work.
-- `jobutils-vim` starts Vim with the configured environment.
+- `jobutils-vim` starts Vim with the configured environment. With no file
+  argument, it opens the configured GTD repository's `gtd.md`; an explicit
+  file argument is passed through unchanged.
 - `jobutils-activate` is an optional helper for manual Python commands.
 
 The wrappers use absolute paths, so the CLI and Vim do not depend on the
 current directory or on a manually activated virtual environment.
+
+The GTD repository path entered during setup is embedded in the generated
+`jobutils-vim` wrapper. You do not need to export `GTD_ROOT` for normal use.
+`GTD_ROOT` remains available as an override for a different repository.
+
+If an older setup produced Vim errors such as `E488: Trailing characters` for
+`job-utils setup` markers, run setup once again. The managed Vimrc block is
+rewritten with valid Vim comments; user-owned lines are left untouched.
 
 ## Vim integration
 
