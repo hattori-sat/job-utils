@@ -116,7 +116,7 @@ Confluence storage XML-like markup, `unittest`.
   external payload types.
 - [ ] Run the complete test suite and `git diff --check`.
 - [ ] Inspect the public diff for credentials, real Atlassian identifiers,
-  local paths, and conversation or implementation-process residue.
+  local paths, and unnecessary private context.
 - [ ] Request code review and resolve Critical/Important findings.
 - [ ] Push only `codex/pr-markdown-conversion` and open one PR against `main`.
   Do not merge it.

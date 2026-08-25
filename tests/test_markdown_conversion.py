@@ -46,6 +46,42 @@ Useful **context**.
         self.assertIn('<ac:structured-macro ac:name="info">', rendered)
         self.assertIn("Useful **context**.", rendered)
 
+    def test_external_urls_are_preserved_and_unsafe_schemes_are_removed(self):
+        rendered = markdown_to_storage(
+            "[safe](https://example.com) [mail](mailto:user@example.com) [bad](javascript:alert(1))"
+        )
+        self.assertIn('href="https://example.com"', rendered)
+        self.assertIn('href="mailto:user@example.com"', rendered)
+        self.assertNotIn("javascript:", rendered)
+        self.assertNotIn('href="javascript:', rendered)
+
+        markdown = storage_to_markdown(
+            '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
+        )
+        self.assertIn("[safe](https://example.com)", markdown)
+        self.assertNotIn("javascript:", markdown)
+
+    def test_table_pipes_order_start_and_code_language_survive_round_trip(self):
+        source = """3. third
+4. fourth
+
+| Name | Value |
+| --- | --- |
+| A\\|B | 1 |
+
+```python
+print('ok')
+```
+"""
+        storage = markdown_to_storage(source)
+        self.assertIn('<ol start="3">', storage)
+        self.assertIn('ac:name="code"', storage)
+        self.assertIn("language", storage)
+        round_tripped = storage_to_markdown(storage)
+        self.assertIn("3. third\n4. fourth", round_tripped)
+        self.assertIn("| A\\|B | 1 |", round_tripped)
+        self.assertIn("```python\nprint('ok')\n```", round_tripped)
+
     def test_storage_to_markdown_reads_supported_blocks_and_macro_body(self):
         markdown = storage_to_markdown(
             """<h1>Guide</h1>

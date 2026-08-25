@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from jobutils.gtd import frontmatter
 
@@ -109,8 +110,10 @@ def public_markdown_links(body: str, published: Dict[str, str]) -> str:
     def replace(match: re.Match) -> str:
         target = match.group(2)
         external = published.get(target)
-        if external:
+        if external and _is_safe_url(external):
             return "{}({})".format(match.group(1), external)
+        if _is_safe_url(target):
+            return match.group(0)
         if match.group(1).startswith("!"):
             return match.group(1)
         return match.group(1)
@@ -129,6 +132,25 @@ _ORDERED = re.compile(r"^\s*\d+[.)]\s+(.+)$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
+def _is_safe_url(target: str) -> bool:
+    """Allow only inert link schemes in external representations."""
+
+    if target.startswith("#"):
+        return True
+    parsed = urlparse(target)
+    if parsed.scheme in ("http", "https"):
+        return bool(parsed.netloc)
+    if parsed.scheme == "mailto":
+        return bool(parsed.path)
+    return False
+
+
+def _markdown_table_cell(value: str) -> str:
+    """Escape a Markdown table cell without changing its visible text."""
+
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
 def _table_cells(line: str) -> List[str]:
     """Split a simple pipe table row into trimmed cells."""
 
@@ -137,7 +159,24 @@ def _table_cells(line: str) -> List[str]:
         value = value[1:]
     if value.endswith("|") and not value.endswith("\\|"):
         value = value[:-1]
-    return [cell.strip().replace("\\|", "|") for cell in value.split("|")]
+    cells: List[str] = []
+    current: List[str] = []
+    escaped = False
+    for char in value:
+        if escaped:
+            current.append("|" if char == "|" else "\\" + char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if escaped:
+        current.append("\\")
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _is_table_separator(line: str) -> bool:
@@ -222,6 +261,11 @@ def _markdown_blocks(body: str) -> List[Tuple[str, object]]:
         list_match = _BULLET.match(line) or _ORDERED.match(line)
         if list_match:
             kind = "unordered" if _BULLET.match(line) else "ordered"
+            start = (
+                int(re.match(r"^\s*(\d+)", line).group(1))
+                if kind == "ordered"
+                else 1
+            )
             items = [list_match.group(1)]
             index += 1
             while index < len(lines):
@@ -230,7 +274,7 @@ def _markdown_blocks(body: str) -> List[Tuple[str, object]]:
                     break
                 items.append(match.group(1))
                 index += 1
-            blocks.append((kind, items))
+            blocks.append((kind, items if kind == "unordered" else (start, items)))
             continue
         paragraph = [line.strip()]
         index += 1
@@ -251,6 +295,10 @@ def _render_storage_inline(text: str) -> str:
         image, label, target = match.group(1), match.group(2), match.group(3)
         safe_label = html.escape(label, quote=True)
         safe_target = html.escape(target, quote=True)
+        if not _is_safe_url(target):
+            output.append(safe_label)
+            last = match.end()
+            continue
         if image:
             output.append(
                 '<ac:image ac:alt="{0}"><ri:url ri:value="{1}" /></ac:image>'.format(
@@ -291,16 +339,31 @@ def markdown_to_storage(body: str) -> str:
             output.append("<p>{}</p>".format(_render_storage_inline(value)))
         elif kind in ("unordered", "ordered"):
             tag = "ul" if kind == "unordered" else "ol"
+            start, items = (1, value) if kind == "unordered" else value
+            start_attr = "" if kind == "unordered" or start == 1 else ' start="{}"'.format(start)
             output.append(
-                "<{0}>{1}</{0}>".format(
+                "<{0}{1}>{2}</{0}>".format(
                     tag,
-                    "".join("<li>{}</li>".format(_render_storage_inline(item)) for item in value),
+                    start_attr,
+                    "".join("<li>{}</li>".format(_render_storage_inline(item)) for item in items),
                 )
             )
         elif kind == "table":
             output.append(_render_storage_table(value[0], value[1]))
         elif kind == "code":
-            output.append("<pre><code>{}</code></pre>".format(html.escape(value[1])))
+            language, code = value
+            parameter = (
+                '<ac:parameter ac:name="language">{}</ac:parameter>'.format(
+                    html.escape(language, quote=True)
+                )
+                if language
+                else ""
+            )
+            output.append(
+                '<ac:structured-macro ac:name="code">{}<ac:plain-text-body>{}</ac:plain-text-body></ac:structured-macro>'.format(
+                    parameter, html.escape(code)
+                )
+            )
         elif kind == "macro":
             name, macro_body = value
             output.append(
@@ -375,10 +438,9 @@ def _storage_inline(node: object) -> str:
     if node.tag == "br":
         return "\n"
     if node.tag == "a":
-        return "[{}]({})".format(
-            "".join(_storage_inline(child) for child in node.children),
-            node.attrs.get("href", ""),
-        )
+        label = "".join(_storage_inline(child) for child in node.children)
+        target = node.attrs.get("href", "")
+        return "[{}]({})".format(label, target) if _is_safe_url(target) else label
     if node.tag == "ac:image":
         target_nodes = _find_nodes(node, "ri:url")
         target = target_nodes[0].attrs.get("ri:value", "") if target_nodes else ""
@@ -401,8 +463,14 @@ def _storage_table(node: _StorageNode) -> str:
         return ""
     width = max(len(row) for row in rendered)
     rendered = [row + [""] * (width - len(row)) for row in rendered]
-    lines = ["| " + " | ".join(rendered[0]) + " |", "| " + " | ".join("---" for _ in range(width)) + " |"]
-    lines.extend("| " + " | ".join(row) + " |" for row in rendered[1:])
+    lines = [
+        "| " + " | ".join(_markdown_table_cell(cell) for cell in rendered[0]) + " |",
+        "| " + " | ".join("---" for _ in range(width)) + " |",
+    ]
+    lines.extend(
+        "| " + " | ".join(_markdown_table_cell(cell) for cell in row) + " |"
+        for row in rendered[1:]
+    )
     return "\n".join(lines)
 
 
@@ -415,12 +483,16 @@ def _storage_block(node: _StorageNode) -> str:
         return "".join(_storage_inline(child) for child in node.children).strip()
     if node.tag in ("ul", "ol"):
         prefix = "-" if node.tag == "ul" else "1."
+        start = int(node.attrs.get("start", "1") or "1")
         items = []
         for child in node.children:
             if isinstance(child, _StorageNode) and child.tag == "li":
                 items.append("{} {}".format(prefix, _storage_inline(child).strip()))
         if node.tag == "ol":
-            items = ["{}. {}".format(index, line.split(" ", 1)[1]) for index, line in enumerate(items, 1)]
+            items = [
+                "{}. {}".format(index, line.split(" ", 1)[1])
+                for index, line in enumerate(items, start)
+            ]
         return "\n".join(items)
     if node.tag == "table":
         return _storage_table(node)
@@ -428,6 +500,15 @@ def _storage_block(node: _StorageNode) -> str:
         return "```\n{}\n```".format(_node_text(node).rstrip("\n"))
     if node.tag == "ac:structured-macro":
         name = node.attrs.get("ac:name", "unknown")
+        if name == "code":
+            body_nodes = _find_nodes(node, "ac:plain-text-body")
+            language = ""
+            for parameter in _find_nodes(node, "ac:parameter"):
+                if parameter.attrs.get("ac:name") == "language":
+                    language = _node_text(parameter)
+                    break
+            body = _node_text(body_nodes[0]) if body_nodes else ""
+            return "```{}\n{}\n```".format(language, body.rstrip("\n"))
         body_nodes = _find_nodes(node, "ac:rich-text-body")
         body = _storage_blocks(body_nodes[0].children) if body_nodes else ""
         return ":::confluence-macro name={}\n{}\n:::".format(name, body.rstrip("\n"))
@@ -466,7 +547,7 @@ def _adf_inline(text: str) -> List[Dict]:
         if match.start() > last:
             nodes.append({"type": "text", "text": text[last : match.start()]})
         label = match.group(2)
-        if match.group(1):
+        if match.group(1) or not _is_safe_url(match.group(3)):
             nodes.append({"type": "text", "text": label})
         else:
             nodes.append(
@@ -501,12 +582,13 @@ def markdown_to_adf(body: str) -> Dict:
         elif kind == "paragraph":
             content.append(_adf_paragraph(value))
         elif kind in ("unordered", "ordered"):
+            start, items = (1, value) if kind == "unordered" else value
             item_nodes = [
-                {"type": "listItem", "content": [_adf_paragraph(item)]} for item in value
+                {"type": "listItem", "content": [_adf_paragraph(item)]} for item in items
             ]
             block = {"type": "bulletList" if kind == "unordered" else "orderedList", "content": item_nodes}
             if kind == "ordered":
-                block["attrs"] = {"order": 1}
+                block["attrs"] = {"order": start}
             content.append(block)
         elif kind == "table":
             headers, rows = value
@@ -551,7 +633,7 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
         text = item.get("text", "")
         marks = item.get("marks", []) or []
         link = next((mark.get("attrs", {}).get("href") for mark in marks if mark.get("type") == "link"), None)
-        output.append("[{}]({})".format(text, link) if link else text)
+        output.append("[{}]({})".format(text, link) if link and _is_safe_url(link) else text)
     return "".join(output)
 
 
@@ -565,7 +647,11 @@ def _adf_list(block: Dict, ordered: bool) -> str:
             for paragraph in item.get("content", [])
             if paragraph.get("type") == "paragraph"
         )
-        lines.append("{}. {}".format(index, text) if ordered else "- {}".format(text))
+        if ordered:
+            start = int(block.get("attrs", {}).get("order", 1) or 1)
+            lines.append("{}. {}".format(start + index - 1, text))
+        else:
+            lines.append("- {}".format(text))
     return "\n".join(lines)
 
 
@@ -583,8 +669,14 @@ def _adf_table(block: Dict) -> str:
         return ""
     width = max(len(row) for row in rows)
     rows = [row + [""] * (width - len(row)) for row in rows]
-    lines = ["| " + " | ".join(rows[0]) + " |", "| " + " | ".join("---" for _ in range(width)) + " |"]
-    lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
+    lines = [
+        "| " + " | ".join(_markdown_table_cell(cell) for cell in rows[0]) + " |",
+        "| " + " | ".join("---" for _ in range(width)) + " |",
+    ]
+    lines.extend(
+        "| " + " | ".join(_markdown_table_cell(cell) for cell in row) + " |"
+        for row in rows[1:]
+    )
     return "\n".join(lines)
 
 

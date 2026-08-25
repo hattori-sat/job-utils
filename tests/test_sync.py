@@ -220,6 +220,7 @@ confluence_space_key: DOC
 | A | 1 |
 
 [Private reference](documents/secret.md)
+[Public reference](https://example.com/public)
 
 # Implementation Note
 
@@ -242,6 +243,8 @@ jira_project: DEMO
 - one
 - two
 
+[Public task reference](https://example.com/public)
+
 # Implementation Note
 
 private-task-note
@@ -257,6 +260,8 @@ private-task-note
             self.assertNotIn("private-token", value)
             self.assertNotIn("private-task-note", value)
             self.assertNotIn("documents/secret.md", value)
+        self.assertIn("https://example.com/public", confluence_body)
+        self.assertIn("https://example.com/public", serialized_jira)
         self.assertIn("<th>Name</th>", confluence_body)
         self.assertEqual(jira_body["content"][0]["type"], "heading")
         self.assertEqual(jira_body["content"][1]["type"], "bulletList")
