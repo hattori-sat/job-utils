@@ -291,30 +291,27 @@ def fetch(repo_root: Path, remote: str = "origin") -> Dict[str, object]:
         repo_root,
         ["rev-parse", "refs/remotes/{}/{}".format(selected_remote, selected_branch)],
     )
-    if remote_revision.returncode:
-        raise GitOperationError(
-            _redact_git_output(
-                remote_revision.stderr.strip()
-                or "could not determine fetched remote revision"
-            )
-        )
     local_revision = _run(repo_root, ["rev-parse", "HEAD"])
     if local_revision.returncode:
         raise GitOperationError(
             _redact_git_output(
                 local_revision.stderr.strip() or "could not determine local revision"
             )
-        )
+    )
     local_revision_text = local_revision.stdout.strip()
-    remote_revision_text = remote_revision.stdout.strip()
+    remote_revision_text = (
+        remote_revision.stdout.strip() if remote_revision.returncode == 0 else None
+    )
     return {
         "performed": True,
         "remote": selected_remote,
         "branch": selected_branch,
         "local_revision": local_revision_text,
         "remote_revision": remote_revision_text,
-        "state": _revision_state(
-            repo_root, local_revision_text, remote_revision_text
+        "state": (
+            _revision_state(repo_root, local_revision_text, remote_revision_text)
+            if remote_revision_text
+            else "no_remote"
         ),
         "output": _redact_git_output(
             "\n".join(value for value in (result.stdout, result.stderr) if value)

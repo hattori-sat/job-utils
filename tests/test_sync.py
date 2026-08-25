@@ -169,6 +169,57 @@ Private content.
         self.assertTrue(response["git"]["performed"])
         self.assertTrue((repo / "remote.md").is_file())
 
+    def test_cli_sync_apply_rejects_remote_ahead_before_external_apply(self):
+        repo = Path(self.tempdir.name) / "stale-apply-repo"
+        repo.mkdir()
+        remote = Path(self.tempdir.name) / "stale-apply-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "config", "user.email", "local-test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        document = repo / "documents"
+        document.mkdir()
+        path = document / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: seed stale apply repository"], cwd=repo, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repo, check=True)
+        plan_path = Path(self.tempdir.name) / "stale-apply-plan.json"
+        plan_path.write_text(json.dumps(create_plan(repo)), encoding="utf-8")
+
+        peer = Path(self.tempdir.name) / "stale-apply-peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True)
+        subprocess.run(["git", "config", "user.name", "Peer Test"], cwd=peer, check=True)
+        (peer / "peer.md").write_text("peer\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: advance remote before apply"], cwd=peer, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            result = main(
+                [
+                    "sync",
+                    "apply",
+                    "--repo",
+                    str(repo),
+                    "--plan",
+                    str(plan_path),
+                    "--adapter",
+                    "memory",
+                    "--git-sync",
+                ]
+            )
+
+        self.assertEqual(result, 1)
+        self.assertIn("remote_ahead", errors.getvalue())
+        self.assertNotIn("confluence_page_id:", path.read_text(encoding="utf-8"))
+
     def test_cli_sync_apply_commits_dirty_worktree_once_after_external_apply(self):
         repo = Path(self.tempdir.name) / "repo"
         repo.mkdir()
@@ -1166,6 +1217,48 @@ Objective.
         self.assertEqual(result[0]["action"], "import")
         self.assertIn("Remote", path.read_text(encoding="utf-8"))
         self.assertNotIn("Base\n", path.read_text(encoding="utf-8"))
+
+    def test_plan_rejects_observation_with_remote_git_changes(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(SyncError, "Git repository is remote_ahead"):
+            create_plan(
+                self.repo,
+                {
+                    "observation_id": "observation-1",
+                    "git": {"state": "remote_ahead"},
+                    "items": [],
+                },
+            )
+
+    def test_apply_rejects_external_change_after_check_before_mutation(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote one\n"
+        )
+        check(self.repo, adapter)
+        plan = create_plan(self.repo)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote two\n"
+        )
+        before = path.read_text(encoding="utf-8")
+
+        with self.assertRaisesRegex(SyncError, "external record changed"):
+            apply_plan(self.repo, plan, adapter)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
 
     def test_apply_rejects_conflict_action_before_mutating(self):
         path = self.repo / "documents" / "guide.md"

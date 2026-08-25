@@ -276,6 +276,13 @@ def create_plan(
     observations = (
         _load_observation(repo_root) if observations is None else observations
     )
+    git_state = (observations or {}).get("git", {}).get("state")
+    if git_state in ("remote_ahead", "diverged"):
+        raise SyncError(
+            "Git repository is {}; run sync update before creating a plan".format(
+                git_state
+            )
+        )
     observed_by_path = {
         item.get("path"): item
         for item in (observations or {}).get("items", [])
@@ -798,6 +805,28 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             for item in observation.get("items", [])
             if isinstance(item, dict) and item.get("path")
         }
+        git_state = observation.get("git", {}).get("state")
+        if git_state in ("remote_ahead", "diverged"):
+            raise SyncError(
+                "Git repository is {}; run sync update before applying".format(
+                    git_state
+                )
+            )
+        for observed in observed_by_path.values():
+            current_remote = adapter.fetch(
+                observed["kind"],
+                observed["external_id"],
+                observed.get("fetch_options") or {},
+            )
+            previous_remote = observed.get("remote") or {}
+            if current_remote.get("body_markdown") != previous_remote.get(
+                "body_markdown"
+            ):
+                raise SyncError(
+                    "external record changed since sync check for {}".format(
+                        observed["path"]
+                    )
+                )
     conflicts = [
         action
         for action in plan["actions"]
@@ -1031,6 +1060,7 @@ def check(
     repo_root = Path(repo_root).resolve()
     items: List[Dict[str, object]] = []
     error_count = 0
+    errors: List[str] = []
     if refresh_git:
         try:
             git_result = git_fetch(repo_root)
@@ -1039,7 +1069,15 @@ def check(
     else:
         git_result = {"performed": False, "skipped": True}
     observation_id = str(uuid.uuid4())
-    for path in _documents(repo_root):
+    git_state = git_result.get("state")
+    if git_state in ("remote_ahead", "diverged"):
+        error_count += 1
+        errors.append(
+            "Git repository is {}; run sync update before checking external state".format(
+                git_state
+            )
+        )
+    for path in [] if errors else _documents(repo_root):
         relative_path = str(path.relative_to(repo_root)).replace("\\", "/")
         try:
             document = parse_document(str(path))
@@ -1060,7 +1098,7 @@ def check(
             remote = adapter.fetch(
                 kind,
                 external_id,
-                {
+                fetch_options := {
                     "progress_comment_field": document.metadata.get(
                         "jira_progress_comment_field"
                     ),
@@ -1100,6 +1138,7 @@ def check(
                 "local_public_body": document.public_body,
                 "base_body": base,
                 "remote": remote,
+                "fetch_options": fetch_options,
             }
         except Exception as error:
             error_count += 1
@@ -1123,6 +1162,7 @@ def check(
     return {
         "checked": len(items),
         "error_count": error_count,
+        "errors": errors,
         "git": git_result,
         "observation_id": observation_id,
         "items": items,

@@ -13,6 +13,7 @@ from .env import load_local_env
 from .gitops import (
     GitOperationError,
     commit as git_commit,
+    fetch as git_fetch,
     push as git_push,
     pull as git_pull,
     status as git_status,
@@ -336,6 +337,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                         ),
                     }
                 )
+            if git_sync:
+                git_state = git_fetch(repo, remote=args.remote)
+                if git_state.get("state") in ("remote_ahead", "diverged"):
+                    raise GitOperationError(
+                        "Git repository is {}; run sync update before applying".format(
+                            git_state["state"]
+                        )
+                    )
             results = apply_plan(repo, plan, adapter)
             response = {"actions": results}
             if git_sync:
