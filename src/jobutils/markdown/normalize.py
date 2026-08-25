@@ -137,10 +137,15 @@ def _is_safe_url(target: str) -> bool:
 
     if target.startswith("#"):
         return True
-    parsed = urlparse(target)
+    try:
+        parsed = urlparse(target)
+    except ValueError:
+        return False
     if parsed.scheme in ("http", "https"):
         return bool(parsed.netloc)
     if parsed.scheme == "mailto":
+        return bool(parsed.path)
+    if parsed.scheme == "attachment":
         return bool(parsed.path)
     return False
 
@@ -149,6 +154,12 @@ def _markdown_table_cell(value: str) -> str:
     """Escape a Markdown table cell without changing its visible text."""
 
     return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _escape_markdown_text(value: str) -> str:
+    """Escape inline delimiters in text imported from an external system."""
+
+    return re.sub(r"([\\\[\]\(\)!])", r"\\\1", value)
 
 
 def _table_cells(line: str) -> List[str]:
@@ -300,11 +311,19 @@ def _render_storage_inline(text: str) -> str:
             last = match.end()
             continue
         if image:
-            output.append(
-                '<ac:image ac:alt="{0}"><ri:url ri:value="{1}" /></ac:image>'.format(
-                    safe_label, safe_target
+            if target.startswith("attachment:"):
+                output.append(
+                    '<ac:image ac:alt="{0}"><ri:attachment ri:filename="{1}" /></ac:image>'.format(
+                        safe_label,
+                        html.escape(target.split(":", 1)[1], quote=True),
+                    )
                 )
-            )
+            else:
+                output.append(
+                    '<ac:image ac:alt="{0}"><ri:url ri:value="{1}" /></ac:image>'.format(
+                        safe_label, safe_target
+                    )
+                )
         else:
             output.append('<a href="{0}">{1}</a>'.format(safe_target, safe_label))
         last = match.end()
@@ -434,7 +453,7 @@ def _storage_inline(node: object) -> str:
     """Convert inline storage nodes to Markdown inline syntax."""
 
     if isinstance(node, str):
-        return node
+        return _escape_markdown_text(node)
     if node.tag == "br":
         return "\n"
     if node.tag == "a":
@@ -446,8 +465,12 @@ def _storage_inline(node: object) -> str:
         target = target_nodes[0].attrs.get("ri:value", "") if target_nodes else ""
         if not target:
             attachments = _find_nodes(node, "ri:attachment")
-            target = attachments[0].attrs.get("ri:filename", "") if attachments else ""
-        alt = node.attrs.get("ac:alt", "")
+            target = (
+                "attachment:" + attachments[0].attrs.get("ri:filename", "")
+                if attachments
+                else ""
+            )
+        alt = _escape_markdown_text(node.attrs.get("ac:alt", ""))
         return "![{}]({})".format(alt, target) if _is_safe_url(target) else alt
     return "".join(_storage_inline(child) for child in node.children)
 
@@ -534,6 +557,12 @@ def storage_to_markdown(storage: str) -> str:
     """Convert the supported Confluence storage subset back to Markdown."""
 
     parser = _StorageParser()
+    storage = re.sub(
+        r"<!\[CDATA\[(.*?)\]\]>",
+        lambda match: html.escape(match.group(1)),
+        storage,
+        flags=re.S,
+    )
     parser.feed(storage)
     parser.close()
     return canonical_body(_storage_blocks(parser.root.children))
@@ -629,11 +658,11 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
             continue
         if item_type == "image":
             attrs = item.get("attrs", {})
-            alt = attrs.get("alt", "")
+            alt = _escape_markdown_text(attrs.get("alt", ""))
             target = attrs.get("url", "")
             output.append("![{}]({})".format(alt, target) if _is_safe_url(target) else alt)
             continue
-        text = item.get("text", "")
+        text = _escape_markdown_text(item.get("text", ""))
         marks = item.get("marks", []) or []
         link = next((mark.get("attrs", {}).get("href") for mark in marks if mark.get("type") == "link"), None)
         output.append("[{}]({})".format(text, link) if link and _is_safe_url(link) else text)

@@ -58,10 +58,12 @@ Useful **context**.
         markdown = storage_to_markdown(
             '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
             '<ac:image ac:alt="bad-image"><ri:url ri:value="javascript:alert(1)" /></ac:image>'
+            '<p><a href="javascript:alert(1)">[click]</a></p>'
         )
         self.assertIn("[safe](https://example.com)", markdown)
         self.assertNotIn("javascript:", markdown)
         self.assertIn("bad-image", markdown)
+        self.assertIn(r"\[click\]", markdown)
 
         adf_markdown = adf_to_markdown(
             {
@@ -80,6 +82,18 @@ Useful **context**.
             }
         )
         self.assertEqual(adf_markdown, "bad-image\n")
+
+    def test_storage_code_cdata_and_attachment_images_are_preserved(self):
+        markdown = storage_to_markdown(
+            """<ac:structured-macro ac:name="code">
+<ac:parameter ac:name="language">python</ac:parameter>
+<ac:plain-text-body><![CDATA[print('<ok>')]]></ac:plain-text-body>
+</ac:structured-macro>
+<ac:image ac:alt="diagram"><ri:attachment ri:filename="diagram.png" /></ac:image>
+"""
+        )
+        self.assertIn("```python\nprint('<ok>')\n```", markdown)
+        self.assertIn("![diagram](attachment:diagram.png)", markdown)
 
     def test_table_pipes_order_start_and_code_language_survive_round_trip(self):
         source = """3. third
