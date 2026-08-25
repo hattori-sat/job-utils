@@ -185,3 +185,24 @@ first and passes its returned page ID to the child.
 The Jira project, issue type, progress-comment field, Confluence space, and
 default parent page are taken from `.env` when the corresponding Markdown
 front-matter value is empty. Explicit front matter overrides those defaults.
+
+## Published Markdown content
+
+Published document Markdown is converted to Confluence storage content. The
+supported subset includes headings, paragraphs, links, images, unordered and
+ordered lists, pipe tables, fenced code blocks, and explicit macro directives.
+Use a directive when a document needs a Confluence macro that has no ordinary
+Markdown equivalent:
+
+```markdown
+:::confluence-macro name=info
+This text is the macro body.
+:::
+```
+
+Local links and images are replaced with published external URLs when their
+target has a stored external identity. A private local target is omitted from
+the external payload. Jira task descriptions use the same Markdown blocks for
+structured ADF paragraphs, headings, links, lists, tables, and code blocks.
+Pull converts the supported Confluence storage and Jira ADF subset back to
+canonical Markdown.

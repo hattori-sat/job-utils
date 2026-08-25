@@ -58,8 +58,13 @@ Note is preserved below the merged public body.
 
 ## Rendering rules
 
-- Task descriptions are rendered to Jira's document format by the adapter.
-- Document bodies are rendered to Confluence storage content by the adapter.
+- Task descriptions are rendered to Jira ADF with headings, paragraphs, links,
+  unordered/ordered lists, tables, and fenced code blocks.
+- Document bodies are rendered to Confluence storage content with headings,
+  paragraphs, links, images, unordered/ordered lists, pipe tables, fenced code
+  blocks, and explicit `:::confluence-macro name=...` directives.
+- The supported Confluence storage and Jira ADF subset is converted back to
+  canonical Markdown during pull.
 - Implementation Notes are removed before either payload is created.
 - Local relative references are replaced by published external URLs when
   available; private Markdown paths are removed from external text.

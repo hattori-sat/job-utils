@@ -201,6 +201,71 @@ publish_confluence: 'true'
         )
         self.assertEqual(parse_document(str(document)).metadata["kind"], "document")
 
+    def test_public_payloads_support_blocks_without_private_content(self):
+        document = self.repo / "documents" / "guide.md"
+        document.write_text(
+            """---
+gtd_id: 'doc-1'
+kind: 'document'
+title: 'Guide'
+publish_confluence: true
+confluence_space_id: space-1
+confluence_space_key: DOC
+---
+
+# Guide
+
+| Name | Value |
+| --- | --- |
+| A | 1 |
+
+[Private reference](documents/secret.md)
+[Public reference](https://example.com/public)
+
+# Implementation Note
+
+private-token
+""",
+            encoding="utf-8",
+        )
+        task = self.repo / "gtd_tasks" / "task.md"
+        task.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task'
+publish_jira: true
+jira_project: DEMO
+---
+
+# Summary
+
+- one
+- two
+
+[Public task reference](https://example.com/public)
+
+# Implementation Note
+
+private-task-note
+""",
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        by_kind = {action["kind"]: action["payload"] for action in plan["actions"]}
+        confluence_body = by_kind["confluence"]["storage_body"]
+        jira_body = by_kind["jira"]["description_adf"]
+        serialized_jira = json.dumps(jira_body, sort_keys=True)
+        for value in (confluence_body, serialized_jira):
+            self.assertNotIn("private-token", value)
+            self.assertNotIn("private-task-note", value)
+            self.assertNotIn("documents/secret.md", value)
+        self.assertIn("https://example.com/public", confluence_body)
+        self.assertIn("https://example.com/public", serialized_jira)
+        self.assertIn("<th>Name</th>", confluence_body)
+        self.assertEqual(jira_body["content"][0]["type"], "heading")
+        self.assertEqual(jira_body["content"][1]["type"], "bulletList")
+
     def test_pull_marks_two_sided_change_for_vim_resolution(self):
         path = self.repo / "documents" / "guide.md"
         path.write_text(

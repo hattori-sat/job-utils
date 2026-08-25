@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from jobutils.gtd import frontmatter
-from jobutils.markdown.normalize import markdown_to_storage, parse_document
+from jobutils.markdown.normalize import markdown_to_adf, markdown_to_storage, parse_document
 
 from .adapters import SyncAdapter
 from .defaults import load_sync_defaults
@@ -65,13 +65,7 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
     if kind == "jira":
         return {
             "title": document.metadata.get("title") or path.stem,
-            "description_adf": {
-                "version": 1,
-                "type": "doc",
-                "content": [
-                    {"type": "paragraph", "content": [{"type": "text", "text": body}]}
-                ],
-            },
+            "description_adf": markdown_to_adf(body),
             "project": document.metadata.get("jira_project") or defaults["jira_project"],
             "issue_type": document.metadata.get("jira_issue_type") or defaults["jira_issue_type"],
             "parent_key": document.metadata.get("jira_parent_key"),

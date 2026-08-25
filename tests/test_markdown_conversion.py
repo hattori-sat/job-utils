@@ -1,0 +1,259 @@
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
+
+from jobutils.markdown.normalize import (
+    adf_to_markdown,
+    markdown_to_adf,
+    markdown_to_storage,
+    storage_to_markdown,
+)
+
+
+class MarkdownConversionTests(unittest.TestCase):
+    def test_markdown_to_storage_renders_supported_blocks_and_inline_content(self):
+        rendered = markdown_to_storage(
+            """# Guide
+
+See [the docs](https://example.com/docs) and ![diagram](https://example.com/a.png).
+
+- one
+- two
+
+1. first
+2. second
+
+| Name | Value |
+| --- | --- |
+| A | 1 |
+
+:::confluence-macro name=info
+Useful **context**.
+:::
+"""
+        )
+        self.assertIn('<h1>Guide</h1>', rendered)
+        self.assertIn('<a href="https://example.com/docs">the docs</a>', rendered)
+        self.assertIn(
+            '<ac:image ac:alt="diagram"><ri:url ri:value="https://example.com/a.png" /></ac:image>',
+            rendered,
+        )
+        self.assertIn("<ul><li>one</li><li>two</li></ul>", rendered)
+        self.assertIn("<ol><li>first</li><li>second</li></ol>", rendered)
+        self.assertIn("<th>Name</th><th>Value</th>", rendered)
+        self.assertIn('<ac:structured-macro ac:name="info">', rendered)
+        self.assertIn("Useful **context**.", rendered)
+
+    def test_external_urls_are_preserved_and_unsafe_schemes_are_removed(self):
+        rendered = markdown_to_storage(
+            "[safe](https://example.com) [paren](https://example.com/a(b)) [mail](mailto:user@example.com) [bad](javascript:alert(1)) [file](attachment:../../secret)"
+        )
+        self.assertIn('href="https://example.com"', rendered)
+        self.assertIn('href="https://example.com/a(b)"', rendered)
+        self.assertIn('href="mailto:user@example.com"', rendered)
+        self.assertNotIn("javascript:", rendered)
+        self.assertNotIn('href="javascript:', rendered)
+        self.assertNotIn("attachment:../../secret", rendered)
+        escaped_url = storage_to_markdown(
+            '<p><a href="https://example.com/) [evil](javascript:alert(1))">unsafe</a></p>'
+        )
+        self.assertNotIn("](javascript:", escaped_url)
+        self.assertIn("%29%20[evil]%28javascript:alert%281%29%29", escaped_url)
+
+        markdown = storage_to_markdown(
+            '<p><a href="https://example.com">safe</a> <a href="javascript:alert(1)">bad</a></p>'
+            '<ac:image ac:alt="bad-image"><ri:url ri:value="javascript:alert(1)" /></ac:image>'
+            '<p><a href="javascript:alert(1)">[click]</a></p>'
+        )
+        self.assertIn("[safe](https://example.com)", markdown)
+        self.assertNotIn("javascript:", markdown)
+        self.assertIn("bad-image", markdown)
+        self.assertIn(r"\[click\]", markdown)
+
+        adf_markdown = adf_to_markdown(
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {
+                                "type": "image",
+                                "attrs": {"alt": "bad-image", "url": "javascript:alert(1)"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(adf_markdown, "bad-image\n")
+
+        html_text = adf_to_markdown(
+            {
+                "type": "doc",
+                "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "<img onerror=bad>"}]}
+                ],
+            }
+        )
+        self.assertIn("&lt;img onerror=bad&gt;", html_text)
+
+    def test_storage_code_cdata_and_attachment_images_are_preserved(self):
+        markdown = storage_to_markdown(
+            """<ac:structured-macro ac:name="code">
+<ac:parameter ac:name="language">python</ac:parameter>
+<ac:plain-text-body><![CDATA[print('<ok>')]]></ac:plain-text-body>
+</ac:structured-macro>
+<ac:image ac:alt="diagram"><ri:attachment ri:filename="diagram.png" /></ac:image>
+"""
+        )
+        self.assertIn("```python\nprint('<ok>')\n```", markdown)
+        self.assertIn("![diagram](attachment:diagram.png)", markdown)
+
+        uppercase_attachment = markdown_to_storage("![diagram](ATTACHMENT:diagram.png)")
+        self.assertIn("ri:attachment", uppercase_attachment)
+
+    def test_table_pipes_order_start_and_code_language_survive_round_trip(self):
+        source = """3. third
+4. fourth
+
+| Name | Value |
+| --- | --- |
+| A\\|B | 1 |
+
+```python
+print('ok')
+```
+"""
+        storage = markdown_to_storage(source)
+        self.assertIn('<ol start="3">', storage)
+        self.assertIn('ac:name="code"', storage)
+        self.assertIn("language", storage)
+        round_tripped = storage_to_markdown(storage)
+        self.assertIn("3. third\n4. fourth", round_tripped)
+        self.assertIn("| A\\|B | 1 |", round_tripped)
+        self.assertIn("```python\nprint('ok')\n```", round_tripped)
+
+    def test_storage_to_markdown_reads_supported_blocks_and_macro_body(self):
+        markdown = storage_to_markdown(
+            """<h1>Guide</h1>
+<p>See <a href="https://example.com/docs">the docs</a>.</p>
+<ul><li>one</li><li>two</li></ul>
+<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>A</td><td>1</td></tr></tbody></table>
+<ac:image ac:alt="diagram"><ri:url ri:value="https://example.com/a.png" /></ac:image>
+<ac:structured-macro ac:name="info"><ac:rich-text-body><p>Useful context.</p></ac:rich-text-body></ac:structured-macro>
+"""
+        )
+        self.assertIn("# Guide", markdown)
+        self.assertIn("[the docs](https://example.com/docs)", markdown)
+        self.assertIn("- one\n- two", markdown)
+        self.assertIn("| Name | Value |", markdown)
+        self.assertIn("| --- | --- |", markdown)
+        self.assertIn("![diagram](https://example.com/a.png)", markdown)
+        self.assertIn(":::confluence-macro name=info", markdown)
+        self.assertIn("Useful context.", markdown)
+
+    def test_markdown_to_adf_uses_structured_blocks_and_links(self):
+        document = markdown_to_adf(
+            """# Guide
+
+See [the docs](https://example.com/docs).
+
+- one
+- two
+
+| Name | Value |
+| --- | --- |
+| A | 1 |
+
+```python
+print('ok')
+```
+"""
+        )
+        self.assertEqual(document["type"], "doc")
+        self.assertEqual(document["content"][0]["type"], "heading")
+        self.assertEqual(document["content"][1]["type"], "paragraph")
+        self.assertEqual(
+            document["content"][1]["content"][1]["marks"][0]["type"], "link"
+        )
+        self.assertEqual(document["content"][2]["type"], "bulletList")
+        self.assertEqual(document["content"][3]["type"], "table")
+        self.assertEqual(document["content"][4]["type"], "codeBlock")
+
+    def test_adf_to_markdown_reads_lists_links_and_code(self):
+        markdown = adf_to_markdown(
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": "See "},
+                            {
+                                "type": "text",
+                                "text": "the docs",
+                                "marks": [
+                                    {
+                                        "type": "link",
+                                        "attrs": {"href": "https://example.com/docs"},
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "type": "bulletList",
+                        "content": [
+                            {
+                                "type": "listItem",
+                                "content": [
+                                    {"type": "paragraph", "content": [{"type": "text", "text": "one"}]}
+                                ],
+                            },
+                            {
+                                "type": "listItem",
+                                "content": [
+                                    {"type": "paragraph", "content": [{"type": "text", "text": "two"}]}
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "type": "codeBlock",
+                        "attrs": {"language": "python"},
+                        "content": [{"type": "text", "text": "print('ok')"}],
+                    },
+                    {
+                        "type": "table",
+                        "content": [
+                            {
+                                "type": "tableRow",
+                                "content": [
+                                    {"type": "tableHeader", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Name"}]}]},
+                                    {"type": "tableHeader", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Value"}]}]},
+                                ],
+                            },
+                            {
+                                "type": "tableRow",
+                                "content": [
+                                    {"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "A"}]}]},
+                                    {"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "1"}]}]},
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            }
+        )
+        self.assertIn("[the docs](https://example.com/docs)", markdown)
+        self.assertIn("- one\n- two", markdown)
+        self.assertIn("```python\nprint('ok')\n```", markdown)
+        self.assertIn("| Name | Value |", markdown)
+        self.assertIn("| A | 1 |", markdown)
+
+
+if __name__ == "__main__":
+    unittest.main()
