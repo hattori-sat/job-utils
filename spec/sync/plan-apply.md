@@ -26,6 +26,11 @@ credentials.
 The local `sync status` operation reports plan, base-snapshot, pending-action,
 and conflict counts from `.jobutils/` without contacting an external service.
 
+The read-only `sync check` operation fetches current external bodies and
+compares them with the local public body and the last synchronized base. It
+reports clean, local-only, external-only, converged, conflict, unknown, and
+per-item error states without modifying any file or external resource.
+
 ## Apply
 
 `sync apply` verifies the source hash before executing actions. A stale plan is

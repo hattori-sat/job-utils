@@ -441,6 +441,7 @@ class VimRuntimeTests(unittest.TestCase):
             "GtdSyncPull",
             "GtdSyncStatus",
             "GtdSyncRebind",
+            "GtdSyncCheck",
             "GtdSyncHelp",
             "GtdSubdocument",
             "GtdTaskHelp",
@@ -457,6 +458,7 @@ class VimRuntimeTests(unittest.TestCase):
                 "gtdsyncpull",
                 "gtdsyncstatus",
                 "gtdsyncrebind",
+                "gtdsynccheck",
                 "gtdsynchelp",
                 "gtdsubdocument",
                 "gtdtaskhelp",
@@ -590,6 +592,44 @@ class VimRuntimeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertEqual(document.read_text(encoding="utf-8"), original)
             self.assertIn("cancel", messages.read_text(encoding="utf-8").lower())
+
+    def test_sync_check_is_read_only_and_shows_summary(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "documents").mkdir()
+            (root / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            messages = root / "messages.txt"
+            commands = root / "check.vim"
+            commands.write_text(
+                "\n".join(
+                    [
+                        "set rtp^={}".format(vim_runtime),
+                        "source {}/plugin/jobutils_gtd.vim".format(vim_runtime),
+                        "edit {}/gtd.md".format(root),
+                        "GtdSyncCheck",
+                        "call writefile([execute('messages')], '{}')".format(messages),
+                        "qa!",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            before = (root / "gtd.md").read_bytes()
+            result = subprocess.run(
+                [vim, "-Nu", "NONE", "-i", "NONE", "-n", "-es", "-S", str(commands)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PYTHONPATH": str(repository / "src")},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn('"checked": 0', messages.read_text(encoding="utf-8"))
+            self.assertEqual((root / "gtd.md").read_bytes(), before)
 
     def test_sync_rebind_refreshes_current_buffer_after_success(self):
         vim = shutil.which("vim")

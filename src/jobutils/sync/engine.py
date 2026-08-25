@@ -573,6 +573,80 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     return results
 
 
+def classify_drift(
+    base: Optional[str], local: str, remote: str
+) -> str:
+    """Classify local and external public bodies against the last base."""
+
+    if base is None:
+        return "unknown"
+    if local == remote:
+        return "clean" if local == base else "converged"
+    if local == base:
+        return "external_changed"
+    if remote == base:
+        return "local_changed"
+    return "conflict"
+
+
+def check(repo_root: Path, adapter: SyncAdapter) -> Dict[str, object]:
+    """Inspect external drift without changing local or remote state."""
+
+    repo_root = Path(repo_root).resolve()
+    items: List[Dict[str, object]] = []
+    error_count = 0
+    for path in _documents(repo_root):
+        relative_path = str(path.relative_to(repo_root)).replace("\\", "/")
+        try:
+            document = parse_document(str(path))
+            kind = (
+                "jira"
+                if _bool(document.metadata.get("publish_jira"))
+                else "confluence"
+                if _bool(document.metadata.get("publish_confluence"))
+                else ""
+            )
+            external_id = (
+                document.metadata.get("jira_key")
+                if kind == "jira"
+                else document.metadata.get("confluence_page_id")
+            )
+            if not kind or not external_id:
+                continue
+            remote = adapter.fetch(kind, external_id)
+            remote_body = remote.get("body_markdown")
+            if not isinstance(remote_body, str):
+                raise SyncError("external body is missing")
+            base_file = _base_path(repo_root, path)
+            base = (
+                base_file.read_text(encoding="utf-8")
+                if base_file.is_file()
+                else None
+            )
+            items.append(
+                {
+                    "path": relative_path,
+                    "kind": kind,
+                    "external_id": external_id,
+                    "external_url": remote.get("url")
+                    or document.metadata.get(
+                        "jira_url" if kind == "jira" else "confluence_url"
+                    ),
+                    "state": classify_drift(base, document.public_body, remote_body),
+                }
+            )
+        except Exception as error:
+            error_count += 1
+            items.append(
+                {
+                    "path": relative_path,
+                    "state": "error",
+                    "error": str(error),
+                }
+            )
+    return {"checked": len(items), "error_count": error_count, "items": items}
+
+
 def _base_path(repo_root: Path, path: Path) -> Path:
     """Return the deterministic base snapshot path for a Markdown file."""
 
