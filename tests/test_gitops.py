@@ -6,7 +6,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.gitops import GitOperationError, commit, pull, push, push_mock, status
+from jobutils.gitops import (
+    GitOperationError,
+    commit,
+    fetch,
+    pull,
+    push,
+    push_mock,
+    status,
+)
 
 
 class GitOpsTests(unittest.TestCase):
@@ -150,6 +158,56 @@ class GitOpsTests(unittest.TestCase):
 
         with self.assertRaisesRegex(GitOperationError, "clean"):
             pull(self.repo)
+
+    def test_fetch_updates_remote_tracking_data_without_merging(self):
+        infrastructure = tempfile.TemporaryDirectory()
+        self.addCleanup(infrastructure.cleanup)
+        infrastructure_root = Path(infrastructure.name)
+        remote = infrastructure_root / "remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "note.md").write_text("initial\n", encoding="utf-8")
+        commit(self.repo, "test: seed fetch repository")
+        push(self.repo)
+        local_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.repo, text=True
+        ).strip()
+
+        peer = infrastructure_root / "peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "peer@example.invalid"],
+            cwd=peer,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Peer Test"], cwd=peer, check=True
+        )
+        (peer / "remote.md").write_text("remote\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: add remote note"], cwd=peer, check=True
+        )
+        remote_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=peer, text=True
+        ).strip()
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        result = fetch(self.repo)
+
+        self.assertTrue(result["performed"])
+        self.assertEqual(result["remote"], "origin")
+        self.assertEqual(result["remote_revision"], remote_revision)
+        self.assertEqual(
+            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo, text=True).strip(),
+            local_revision,
+        )
+        self.assertFalse((self.repo / "remote.md").exists())
+        self.assertEqual(status(self.repo), "")
 
 
 

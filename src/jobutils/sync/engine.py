@@ -1,4 +1,4 @@
-"""Plan, apply, and pull synchronization changes for managed Markdown."""
+"""Plan, check, and apply synchronization changes for managed Markdown."""
 
 import hashlib
 import json
@@ -12,17 +12,18 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from jobutils.gtd import frontmatter
+from jobutils.gitops import GitOperationError, fetch as git_fetch
 from jobutils.markdown.normalize import markdown_to_adf, markdown_to_storage, parse_document
 from jobutils.metrics.events import append_event
 
 from .adapters import SyncAdapter
 from .defaults import load_sync_defaults
+from .merge import three_way_merge
 from .references import (
     append_reference_section,
     externalize_references,
     externalize_structured_references,
 )
-from .merge import three_way_merge
 
 
 class SyncError(Exception):
@@ -266,10 +267,20 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
     }
 
 
-def create_plan(repo_root: Path) -> Dict:
-    """Create a reviewable plan without calling an external write endpoint."""
+def create_plan(
+    repo_root: Path, observations: Optional[Dict[str, object]] = None
+) -> Dict:
+    """Create a reviewable plan from Markdown and the latest check result."""
 
     repo_root = Path(repo_root).resolve()
+    observations = (
+        _load_observation(repo_root) if observations is None else observations
+    )
+    observed_by_path = {
+        item.get("path"): item
+        for item in (observations or {}).get("items", [])
+        if isinstance(item, dict) and item.get("path")
+    }
     paths = _documents(repo_root)
     actions: List[Dict] = []
     published_paths: List[Path] = []
@@ -306,34 +317,62 @@ def create_plan(repo_root: Path) -> Dict:
             if kind == "jira"
             else document.metadata.get("confluence_page_id")
         )
+        relative_path = str(path.relative_to(repo_root)).replace("\\", "/")
         operation = "update" if external_id else "create"
+        blocked_reason = None
+        observed = observed_by_path.get(relative_path) if external_id else None
         if external_id:
+            if observed and observed.get("state") == "error":
+                raise SyncError(
+                    "sync check failed for {}; run sync check again".format(
+                        relative_path
+                    )
+                )
+            if observed and observed.get("state") == "conflict":
+                operation = "conflict"
+                blocked_reason = "local and external content both changed"
+            elif observed and observed.get("state") == "external_changed":
+                if document.public_body == observed.get("local_public_body"):
+                    operation = "import"
+                else:
+                    operation = "conflict"
+                    blocked_reason = "local content changed after sync check"
+            elif observed and observed.get("state") in ("clean", "converged"):
+                continue
             source_fingerprint = _source_fingerprint(
                 path.read_text(encoding="utf-8").splitlines(), document.public_body
             )
-            if document.metadata.get("sync_hash") == source_fingerprint:
+            if (
+                operation == "update"
+                and document.metadata.get("sync_hash") == source_fingerprint
+            ):
                 continue
             base_file = _base_path(repo_root, path)
             if (
-                not document.metadata.get("sync_hash")
+                operation == "update"
+                and not document.metadata.get("sync_hash")
                 and base_file.is_file()
                 and base_file.read_text(encoding="utf-8") == document.public_body
             ):
                 continue
         action = {
-                "action_id": str(uuid.uuid4()),
-                "action": operation,
-                "kind": kind,
-                "path": str(path.relative_to(repo_root)).replace("\\", "/"),
-                "external_id": external_id,
-                "payload": _payload(repo_root, path, kind),
+            "action_id": str(uuid.uuid4()),
+            "action": operation,
+            "kind": kind,
+            "path": relative_path,
+            "external_id": external_id,
+            "payload": _payload(repo_root, path, kind)
+            if operation in ("create", "update")
+            else {},
         }
-        if kind == "confluence":
+        if blocked_reason:
+            action["blocked_reason"] = blocked_reason
+        if kind == "confluence" and operation in ("create", "update"):
             parent_path = document.metadata.get("confluence_parent_path")
             parent_path = parent_path or _infer_nested_parent_path(repo_root, path)
             if parent_path:
                 action["parent_path"] = parent_path.replace("\\", "/")
-        elif kind == "jira":
+        elif kind == "jira" and operation in ("create", "update"):
             parent_path = document.metadata.get("jira_parent_path")
             parent_path = parent_path or _infer_nested_parent_path(repo_root, path)
             if parent_path:
@@ -342,6 +381,7 @@ def create_plan(repo_root: Path) -> Dict:
     return {
         "plan_id": str(uuid.uuid4()),
         "created_at": datetime.utcnow().isoformat() + "Z",
+        "observation_id": (observations or {}).get("observation_id"),
         "source_hash": _source_hash(
             repo_root, _source_paths_for_actions(repo_root, actions, published_paths)
         ),
@@ -466,6 +506,10 @@ def _is_valid_plan(plan: object) -> bool:
     source_hash = plan.get("source_hash")
     if not isinstance(source_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", source_hash):
         return False
+    if plan.get("observation_id") is not None and not isinstance(
+        plan.get("observation_id"), str
+    ):
+        return False
     actions = plan.get("actions")
     if not isinstance(actions, list):
         return False
@@ -474,7 +518,7 @@ def _is_valid_plan(plan: object) -> bool:
             return False
         if not isinstance(action.get("action_id"), str) or not action["action_id"]:
             return False
-        if action.get("action") not in ("create", "update"):
+        if action.get("action") not in ("create", "update", "import", "conflict"):
             return False
         if action.get("kind") not in ("jira", "confluence"):
             return False
@@ -482,7 +526,9 @@ def _is_valid_plan(plan: object) -> bool:
             return False
         if not isinstance(action.get("payload"), dict):
             return False
-        if not _is_valid_payload(action["kind"], action["payload"]):
+        if action["action"] in ("create", "update") and not _is_valid_payload(
+            action["kind"], action["payload"]
+        ):
             return False
         if action.get("parent_path"):
             valid_parent = (
@@ -492,7 +538,9 @@ def _is_valid_plan(plan: object) -> bool:
             )
             if not valid_parent:
                 return False
-        if action["action"] == "update" and not action.get("external_id"):
+        if action["action"] in ("update", "import", "conflict") and not action.get(
+            "external_id"
+        ):
             return False
     return True
 
@@ -738,6 +786,23 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     repo_root = Path(repo_root).resolve()
     if not _is_valid_plan(plan):
         raise SyncError("sync plan has invalid structure")
+    observed_by_path = {}
+    if plan.get("observation_id"):
+        observation = _load_observation(repo_root)
+        if not observation or observation.get("observation_id") != plan.get(
+            "observation_id"
+        ):
+            raise SyncError("sync check observation is stale; run sync check again")
+        observed_by_path = {
+            item.get("path"): item
+            for item in observation.get("items", [])
+            if isinstance(item, dict) and item.get("path")
+        }
+    conflicts = [
+        action
+        for action in plan["actions"]
+        if action.get("action") == "conflict"
+    ]
     paths = [
         _managed_action_path(repo_root, action["path"])
         for action in plan["actions"]
@@ -747,9 +812,84 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     )
     if _source_hash(repo_root, hash_paths) != plan.get("source_hash"):
         raise SyncError("sync plan is stale; create a new plan")
+    if conflicts:
+        if not observed_by_path:
+            raise SyncError(
+                "sync plan contains unresolved conflict; run sync check again"
+            )
+        for action in conflicts:
+            observed = observed_by_path.get(action["path"])
+            if not observed or not isinstance(observed.get("remote"), dict):
+                raise SyncError(
+                    "sync conflict observation is stale for {}; run sync check again".format(
+                        action["path"]
+                    )
+                )
+            conflict_path = _managed_action_path(repo_root, action["path"])
+            _write_conflict_markers(
+                conflict_path, observed.get("base_body"), observed["remote"]
+            )
+            append_event(
+                repo_root,
+                "sync_conflict",
+                action["path"],
+                source={
+                    "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+                    "command": "sync apply",
+                },
+                kind=action["kind"],
+                path=action["path"],
+            )
+        raise SyncError(
+            "sync plan contains unresolved conflict; markers written: {}".format(
+                ", ".join(action.get("path", "") for action in conflicts)
+            )
+        )
     results = []
     created_external_ids: Dict[str, str] = {}
     for action, path in zip(plan["actions"], paths):
+        if action["action"] == "import":
+            observed = observed_by_path.get(action["path"])
+            if (
+                not observed
+                or observed.get("state") != "external_changed"
+                or not isinstance(observed.get("remote"), dict)
+            ):
+                raise SyncError(
+                    "sync import observation is stale for {}; run sync check again".format(
+                        action["path"]
+                    )
+                )
+            if parse_document(str(path)).public_body != observed.get(
+                "local_public_body"
+            ):
+                raise SyncError(
+                    "sync import observation is stale for {}; run sync check again".format(
+                        action["path"]
+                    )
+                )
+            _import_remote_record(repo_root, path, observed["remote"])
+            document = parse_document(str(path))
+            append_event(
+                repo_root,
+                "sync_pulled",
+                document.metadata.get("gtd_id") or action["path"],
+                source={
+                    "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
+                    "command": "sync apply",
+                },
+                kind=action["kind"],
+                path=action["path"],
+            )
+            results.append(
+                {
+                    "action_id": action["action_id"],
+                    "action": "import",
+                    "path": action["path"],
+                    "result": observed["remote"],
+                }
+            )
+            continue
         payload = dict(action["payload"])
         if action.get("parent_path"):
             parent_path = action["parent_path"]
@@ -819,7 +959,12 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             path=action["path"],
         )
         results.append(
-            {"action_id": action["action_id"], "path": action["path"], "result": result}
+            {
+                "action_id": action["action_id"],
+                "action": action["action"],
+                "path": action["path"],
+                "result": result,
+            }
         )
     return results
 
@@ -840,12 +985,60 @@ def classify_drift(
     return "conflict"
 
 
-def check(repo_root: Path, adapter: SyncAdapter) -> Dict[str, object]:
-    """Inspect external drift without changing local or remote state."""
+def _observation_path(repo_root: Path) -> Path:
+    """Return the ignored local path for the latest refresh observation."""
+
+    return repo_root / ".jobutils" / "sync" / "observations" / "latest.json"
+
+
+def _load_observation(repo_root: Path) -> Optional[Dict[str, object]]:
+    """Load the latest check observation when one exists."""
+
+    path = _observation_path(repo_root)
+    if not path.is_file():
+        return None
+    try:
+        observation = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise SyncError("invalid sync check observation: {}".format(error)) from error
+    if (
+        not isinstance(observation, dict)
+        or not isinstance(observation.get("observation_id"), str)
+        or not isinstance(observation.get("items"), list)
+    ):
+        raise SyncError("invalid sync check observation structure")
+    return observation
+
+
+def _write_observation(repo_root: Path, observation: Dict[str, object]) -> None:
+    """Persist one refresh observation without adding it to the source tree."""
+
+    target = _observation_path(repo_root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(observation, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(str(temporary), str(target))
+
+
+def check(
+    repo_root: Path, adapter: SyncAdapter, refresh_git: bool = False
+) -> Dict[str, object]:
+    """Refresh and inspect Git/Atlassian drift without commit or push."""
 
     repo_root = Path(repo_root).resolve()
     items: List[Dict[str, object]] = []
     error_count = 0
+    if refresh_git:
+        try:
+            git_result = git_fetch(repo_root)
+        except GitOperationError as error:
+            git_result = {"performed": False, "error": str(error)}
+    else:
+        git_result = {"performed": False, "skipped": True}
+    observation_id = str(uuid.uuid4())
     for path in _documents(repo_root):
         relative_path = str(path.relative_to(repo_root)).replace("\\", "/")
         try:
@@ -864,7 +1057,19 @@ def check(repo_root: Path, adapter: SyncAdapter) -> Dict[str, object]:
             )
             if not kind or not external_id:
                 continue
-            remote = adapter.fetch(kind, external_id)
+            remote = adapter.fetch(
+                kind,
+                external_id,
+                {
+                    "progress_comment_field": document.metadata.get(
+                        "jira_progress_comment_field"
+                    ),
+                    "progress_comment_format": document.metadata.get(
+                        "jira_progress_comment_format"
+                    )
+                    or "text",
+                },
+            )
             remote_body = remote.get("body_markdown")
             if not isinstance(remote_body, str):
                 raise SyncError("external body is missing")
@@ -874,6 +1079,7 @@ def check(repo_root: Path, adapter: SyncAdapter) -> Dict[str, object]:
                 if base_file.is_file()
                 else None
             )
+            state = classify_drift(base, document.public_body, remote_body)
             items.append(
                 {
                     "path": relative_path,
@@ -883,9 +1089,18 @@ def check(repo_root: Path, adapter: SyncAdapter) -> Dict[str, object]:
                     or document.metadata.get(
                         "jira_url" if kind == "jira" else "confluence_url"
                     ),
-                    "state": classify_drift(base, document.public_body, remote_body),
+                    "state": state,
                 }
             )
+            items[-1]["_observation"] = {
+                "path": relative_path,
+                "kind": kind,
+                "external_id": external_id,
+                "state": state,
+                "local_public_body": document.public_body,
+                "base_body": base,
+                "remote": remote,
+            }
         except Exception as error:
             error_count += 1
             items.append(
@@ -895,7 +1110,23 @@ def check(repo_root: Path, adapter: SyncAdapter) -> Dict[str, object]:
                     "error": str(error),
                 }
             )
-    return {"checked": len(items), "error_count": error_count, "items": items}
+    observations = [
+        item.pop("_observation") for item in items if "_observation" in item
+    ]
+    observation = {
+        "observation_id": observation_id,
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+        "git": git_result,
+        "items": observations,
+    }
+    _write_observation(repo_root, observation)
+    return {
+        "checked": len(items),
+        "error_count": error_count,
+        "git": git_result,
+        "observation_id": observation_id,
+        "items": items,
+    }
 
 
 def _base_path(repo_root: Path, path: Path) -> Path:
@@ -950,96 +1181,56 @@ def _apply_remote_metadata(path: Path, remote: Dict) -> None:
         )
 
 
-def pull(repo_root: Path, adapter: SyncAdapter) -> List[Dict]:
-    """Pull external content and preserve two-sided changes as conflicts."""
+def _import_remote_record(repo_root: Path, path: Path, remote: Dict) -> None:
+    """Accept an external-only change into Markdown and refresh its base."""
 
-    repo_root = Path(repo_root).resolve()
-    results: List[Dict] = []
-    for path in _documents(repo_root):
-        if frontmatter.bounds(path.read_text(encoding="utf-8").splitlines()) is None:
-            continue
-        document = parse_document(str(path))
-        kind = (
-            "jira"
-            if _bool(document.metadata.get("publish_jira"))
-            else "confluence"
-            if _bool(document.metadata.get("publish_confluence"))
-            else ""
-        )
-        external_id = (
-            document.metadata.get("jira_key")
-            if kind == "jira"
-            else document.metadata.get("confluence_page_id")
-        )
-        if not kind or not external_id:
-            continue
-        remote = adapter.fetch(
-            kind,
-            external_id,
-            {
-                "progress_comment_field": document.metadata.get(
-                    "jira_progress_comment_field"
-                ),
-                "progress_comment_format": document.metadata.get(
-                    "jira_progress_comment_format"
-                )
-                or "text",
-            },
-        )
-        base_file = _base_path(repo_root, path)
-        base = (
-            base_file.read_text(encoding="utf-8")
-            if base_file.is_file()
-            else document.public_body
-        )
-        # Keep the private implementation note outside the merge input so it
-        # can never be sent to Jira or Confluence.
-        merged, conflict = three_way_merge(
-            base, document.public_body, remote.get("body_markdown", "")
-        )
-        if not conflict:
-            lines = path.read_text(encoding="utf-8").splitlines()
-            closing = frontmatter.bounds(lines)
-            if closing is None:
-                raise SyncError("managed Markdown has no front matter: {}".format(path))
-            suffix = document.implementation_note.rstrip("\n")
-            body_lines = merged.rstrip("\n").splitlines()
-            if suffix:
-                body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
-            new_lines = lines[: closing[1] + 1] + [""] + body_lines
-            path.write_text("\n".join(new_lines).rstrip("\n") + "\n", encoding="utf-8")
-            _write_base(repo_root, path, remote.get("body_markdown", ""))
-            _apply_remote_metadata(path, remote)
-            _write_base(repo_root, path, parse_document(str(path)).public_body)
-        else:
-            lines = path.read_text(encoding="utf-8").splitlines()
-            closing = frontmatter.bounds(lines)
-            suffix = document.implementation_note.rstrip("\n")
-            body_lines = merged.rstrip("\n").splitlines()
-            if suffix:
-                body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
-            path.write_text(
-                "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
-                + "\n",
-                encoding="utf-8",
-            )
-        append_event(
-            repo_root,
-            "sync_conflict" if conflict else "sync_pulled",
-            document.metadata.get("gtd_id") or str(path.relative_to(repo_root)),
-            source={
-                "machine_id": os.environ.get("JOBUTILS_MACHINE_ID", "unknown"),
-                "command": "sync pull",
-            },
-            kind=kind,
-            path=str(path.relative_to(repo_root)).replace("\\", "/"),
-            conflict=conflict,
-        )
-        results.append(
-            {
-                "path": str(path.relative_to(repo_root)),
-                "kind": kind,
-                "conflict": conflict,
-            }
-        )
-    return results
+    remote_body = remote.get("body_markdown")
+    if not isinstance(remote_body, str):
+        raise SyncError("external body is missing")
+    document = parse_document(str(path))
+    lines = path.read_text(encoding="utf-8").splitlines()
+    closing = frontmatter.bounds(lines)
+    if closing is None:
+        raise SyncError("managed Markdown has no front matter: {}".format(path))
+    body_lines = remote_body.rstrip("\n").splitlines()
+    suffix = document.implementation_note.rstrip("\n")
+    if suffix:
+        body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
+    path.write_text(
+        "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
+        + "\n",
+        encoding="utf-8",
+    )
+    _apply_remote_metadata(path, remote)
+    _write_base(repo_root, path, parse_document(str(path)).public_body)
+
+
+def _write_conflict_markers(
+    path: Path, base_body: Optional[str], remote: Dict
+) -> None:
+    """Write a three-way conflict into public Markdown while preserving notes."""
+
+    remote_body = remote.get("body_markdown")
+    if not isinstance(remote_body, str):
+        raise SyncError("external body is missing")
+    document = parse_document(str(path))
+    merged, conflict = three_way_merge(
+        base_body if base_body is not None else document.public_body,
+        document.public_body,
+        remote_body,
+    )
+    if not conflict:
+        raise SyncError("sync conflict observation no longer contains two-sided changes")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    closing = frontmatter.bounds(lines)
+    if closing is None:
+        raise SyncError("managed Markdown has no front matter: {}".format(path))
+    body_lines = merged.rstrip("\n").splitlines()
+    suffix = document.implementation_note.rstrip("\n")
+    if suffix:
+        body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
+    path.write_text(
+        "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
+        + "\n",
+        encoding="utf-8",
+    )
