@@ -72,7 +72,7 @@ def _provider_command(provider: str, executable: str, destination: Path):
             "Add-Type -AssemblyName System.Windows.Forms; "
             "Add-Type -AssemblyName System.Drawing; "
             "if (-not [System.Windows.Forms.Clipboard]::ContainsImage()) "
-            "{ throw 'The clipboard does not contain an image.' }; "
+            "{{ throw 'The clipboard does not contain an image.' }}; "
             "$image = [System.Windows.Forms.Clipboard]::GetImage(); "
             "$image.Save('{}', [System.Drawing.Imaging.ImageFormat]::Png); "
             "$image.Dispose()"

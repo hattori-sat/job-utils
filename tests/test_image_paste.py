@@ -105,6 +105,42 @@ class ImagePasteTests(unittest.TestCase):
                 provider="auto", platform_name="plan9", which=lambda _: None
             )
 
+    def test_macos_pngpaste_provider_writes_a_png(self):
+        calls = []
+
+        def pngpaste_runner(command, **kwargs):
+            calls.append(command)
+            Path(command[1]).write_bytes(b"PNGDATA")
+            return completed(command)
+
+        result = read_clipboard_png(
+            provider="pngpaste",
+            platform_name="darwin",
+            which=lambda name: "/usr/local/bin/pngpaste",
+            runner=pngpaste_runner,
+        )
+
+        self.assertEqual(result, b"PNGDATA")
+        self.assertEqual(calls[0][0], "/usr/local/bin/pngpaste")
+
+    def test_windows_power_shell_provider_uses_noninteractive_command(self):
+        destination = self.root / "clipboard.png"
+
+        def powershell_runner(command, **kwargs):
+            destination.write_bytes(b"PNGDATA")
+            return completed(command)
+
+        result = read_clipboard_png(
+            provider="powershell",
+            platform_name="win32",
+            destination=destination,
+            which=lambda name: "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            runner=powershell_runner,
+        )
+
+        self.assertEqual(result, b"PNGDATA")
+        self.assertEqual(result, destination.read_bytes())
+
     def test_cli_prints_image_and_markdown_lines(self):
         output = io.StringIO()
         result = {
