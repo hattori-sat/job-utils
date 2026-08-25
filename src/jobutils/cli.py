@@ -29,6 +29,7 @@ from .sync.engine import (
     apply_plan,
     create_plan,
     pull,
+    rebind,
     save_plan,
     sync_status,
 )
@@ -91,6 +92,13 @@ def _parser() -> argparse.ArgumentParser:
     pull_parser.add_argument(
         "--adapter", choices=("memory", "atlassian"), default="atlassian"
     )
+    rebind_parser = sync_subparsers.add_parser("rebind")
+    rebind_parser.add_argument("--repo", default=".")
+    rebind_parser.add_argument("--path", required=True)
+    rebind_parser.add_argument("--kind", choices=("jira", "confluence"), required=True)
+    rebind_parser.add_argument("--external-id", required=True)
+    rebind_parser.add_argument("--url", default=None)
+    rebind_parser.add_argument("--parent-id", default=None)
     sync_subparsers.add_parser("status").add_argument("--repo", default=".")
     config = subparsers.add_parser("config")
     config_subparsers = config.add_subparsers(dest="operation")
@@ -252,6 +260,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         except (OSError, ValueError, SyncError, RuntimeError, KeyError) as error:
             print("SYNC: pull failed: {}".format(error), file=sys.stderr)
+            return 1
+    if args.domain == "sync" and args.operation == "rebind":
+        try:
+            path = rebind(
+                Path(args.repo),
+                args.path,
+                args.kind,
+                args.external_id,
+                args.url,
+                args.parent_id,
+            )
+            print(str(path))
+            return 0
+        except (OSError, SyncError, ValueError) as error:
+            print("SYNC: rebind failed: {}".format(error), file=sys.stderr)
             return 1
     if args.domain != "gtd" or args.operation not in (
         "dispatch",

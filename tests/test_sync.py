@@ -13,7 +13,14 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from jobutils.cli import main
 from jobutils.markdown.normalize import markdown_to_storage, parse_document
 from jobutils.sync.adapters import MemoryAdapter
-from jobutils.sync.engine import SyncError, apply_plan, create_plan, pull, sync_status
+from jobutils.sync.engine import (
+    SyncError,
+    apply_plan,
+    create_plan,
+    pull,
+    rebind,
+    sync_status,
+)
 from jobutils.sync.references import externalize_references
 
 
@@ -458,6 +465,148 @@ Objective.
 
         with self.assertRaisesRegex(SyncError, "invalid structure"):
             apply_plan(self.repo, plan, MemoryAdapter())
+
+    def test_rebind_updates_jira_identity_without_external_write(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            "---\ngtd_id: task-1\nkind: task\npublish_jira: true\njira_key: null\njira_url: null\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+
+        result = rebind(
+            self.repo,
+            "gtd_tasks/task.md",
+            "jira",
+            "LIG-42",
+            "https://example.invalid/browse/LIG-42",
+        )
+
+        self.assertEqual(result, path.resolve())
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("jira_key: 'LIG-42'", text)
+        self.assertIn("jira_url: 'https://example.invalid/browse/LIG-42'", text)
+
+    def test_rebind_updates_confluence_page_and_parent_identity(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\ngtd_id: doc-1\nkind: document\npublish_confluence: true\nconfluence_page_id: null\nconfluence_url: null\nconfluence_parent_id: null\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+
+        rebind(
+            self.repo,
+            "documents/guide.md",
+            "confluence",
+            "210632708",
+            "https://example.invalid/wiki/pages/210632708",
+            "parent-9",
+        )
+
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("confluence_page_id: '210632708'", text)
+        self.assertIn(
+            "confluence_url: 'https://example.invalid/wiki/pages/210632708'", text
+        )
+        self.assertIn("confluence_parent_id: 'parent-9'", text)
+
+    def test_rebind_rejects_invalid_target_before_mutation(self):
+        path = self.repo / "documents" / "guide.md"
+        original = "---\nkind: document\nconfluence_page_id: null\n---\n\n# Guide\n"
+        path.write_text(original, encoding="utf-8")
+
+        with self.assertRaisesRegex(SyncError, "unsafe external URL"):
+            rebind(
+                self.repo,
+                "documents/guide.md",
+                "confluence",
+                "page-1",
+                "javascript:alert(1)",
+            )
+
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_rebind_rejects_unmanaged_or_unsafe_paths(self):
+        with self.assertRaisesRegex(SyncError, "unsafe Markdown path"):
+            rebind(self.repo, "README.md", "jira", "LIG-42")
+        with self.assertRaisesRegex(SyncError, "unsafe Markdown path"):
+            rebind(self.repo, "../outside.md", "jira", "LIG-42")
+
+    def test_rebind_cli_updates_the_requested_file(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\nconfluence_page_id: null\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(
+                main(
+                    [
+                        "sync",
+                        "rebind",
+                        "--repo",
+                        str(self.repo),
+                        "--path",
+                        "documents/guide.md",
+                        "--kind",
+                        "confluence",
+                        "--external-id",
+                        "210632708",
+                    ]
+                ),
+                0,
+            )
+        self.assertIn("documents/guide.md", output.getvalue())
+        self.assertIn("confluence_page_id: '210632708'", path.read_text())
+
+    def test_jira_parent_is_resolved_when_parent_is_created_in_same_plan(self):
+        parent = self.repo / "gtd_tasks" / "parent.md"
+        child = parent.with_suffix("") / "child.md"
+        child.parent.mkdir()
+        parent.write_text(
+            "---\ngtd_id: parent\nkind: task\ntitle: Parent\npublish_jira: true\njira_project: LIG\n---\n\n# Summary\nParent\n",
+            encoding="utf-8",
+        )
+        child.write_text(
+            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: LIG\njira_issue_type: Sub-task\njira_parent_path: gtd_tasks/parent.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
+            encoding="utf-8",
+        )
+
+        plan = create_plan(self.repo)
+        self.assertEqual(
+            [action["path"] for action in plan["actions"]],
+            ["gtd_tasks/parent.md", "gtd_tasks/parent/child.md"],
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, plan, adapter)
+
+        child_record = next(
+            record
+            for record in adapter.records.values()
+            if record["payload"]["title"] == "Child"
+        )
+        parent_record = next(
+            record
+            for record in adapter.records.values()
+            if record["payload"]["title"] == "Parent"
+        )
+        self.assertEqual(
+            child_record["payload"]["parent_key"],
+            parent_record["url"].rsplit("/", 1)[-1],
+        )
+
+    def test_jira_parent_path_without_parent_identity_fails_before_child_write(self):
+        child = self.repo / "gtd_tasks" / "child.md"
+        child.write_text(
+            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: LIG\njira_parent_path: gtd_tasks/missing.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+
+        with self.assertRaisesRegex(SyncError, "Jira parent issue is unresolved"):
+            apply_plan(self.repo, create_plan(self.repo), adapter)
+        self.assertEqual(adapter.records, {})
 
     def test_sync_status_ignores_symlinked_plans(self):
         plans = self.repo / ".jobutils" / "sync" / "plans"

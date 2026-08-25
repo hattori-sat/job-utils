@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 from jobutils.gtd import frontmatter
 from jobutils.markdown.normalize import markdown_to_adf, markdown_to_storage, parse_document
@@ -22,6 +24,91 @@ class SyncError(Exception):
     """A synchronization operation cannot safely continue."""
 
     pass
+
+
+_EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+
+
+def _validate_external_identity(value: Optional[str], label: str) -> str:
+    """Validate an Atlassian identity before writing it into front matter."""
+
+    if not isinstance(value, str) or not _EXTERNAL_ID_RE.fullmatch(value):
+        raise SyncError("{} must be a non-empty external identifier".format(label))
+    return value
+
+
+def _validate_external_url(value: Optional[str]) -> Optional[str]:
+    """Allow only absolute HTTP(S) URLs for stored external references."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or any(character.isspace() for character in value):
+        raise SyncError("unsafe external URL")
+    parsed = urlparse(value)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        raise SyncError("unsafe external URL")
+    return value
+
+
+def _atomic_frontmatter_update(path: Path, updates: Dict[str, str]) -> None:
+    """Apply scalar front matter updates through a same-directory replacement."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if frontmatter.bounds(lines) is None:
+        raise SyncError("managed Markdown requires YAML front matter")
+    for key, value in updates.items():
+        frontmatter.set_value(lines, key, value)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=".jobutils-rebind-", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("\n".join(lines).rstrip("\n") + "\n")
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def rebind(
+    repo_root: Path,
+    relative_path: str,
+    kind: str,
+    external_id: str,
+    url: Optional[str] = None,
+    parent_id: Optional[str] = None,
+) -> Path:
+    """Update stored Jira/Confluence identity fields without making API calls."""
+
+    if kind not in ("jira", "confluence"):
+        raise SyncError("kind must be jira or confluence")
+    path = _managed_action_path(Path(repo_root).resolve(), relative_path)
+    if not path.is_file():
+        raise SyncError("managed Markdown file does not exist: {}".format(relative_path))
+    identity = _validate_external_identity(external_id, "external ID")
+    safe_url = _validate_external_url(url)
+    safe_parent = (
+        _validate_external_identity(parent_id, "parent ID")
+        if parent_id is not None
+        else None
+    )
+    if kind == "jira":
+        updates = {"jira_key": identity}
+        if safe_url is not None:
+            updates["jira_url"] = safe_url
+        if safe_parent is not None:
+            updates["jira_parent_key"] = safe_parent
+    else:
+        updates = {"confluence_page_id": identity}
+        if safe_url is not None:
+            updates["confluence_url"] = safe_url
+        if safe_parent is not None:
+            updates["confluence_parent_id"] = safe_parent
+    _atomic_frontmatter_update(path, updates)
+    return path
 
 
 def _bool(value: Optional[str]) -> bool:
