@@ -214,14 +214,12 @@ def create_plan(repo_root: Path) -> Dict:
         }
         if kind == "confluence":
             parent_path = document.metadata.get("confluence_parent_path")
-            if not parent_path:
-                relative = path.relative_to(repo_root)
-                if len(relative.parts) >= 3:
-                    candidate = path.parent.parent / (path.parent.name + ".md")
-                    if candidate.is_file():
-                        parent_path = str(candidate.relative_to(repo_root)).replace(
-                            "\\", "/"
-                        )
+            parent_path = parent_path or _infer_nested_parent_path(repo_root, path)
+            if parent_path:
+                action["parent_path"] = parent_path.replace("\\", "/")
+        elif kind == "jira":
+            parent_path = document.metadata.get("jira_parent_path")
+            parent_path = parent_path or _infer_nested_parent_path(repo_root, path)
             if parent_path:
                 action["parent_path"] = parent_path.replace("\\", "/")
         actions.append(action)
@@ -248,7 +246,7 @@ def _order_actions(actions: List[Dict]) -> List[Dict]:
             return
         visiting.add(path)
         action = by_path[path]
-        parent_path = action.get("parent_path") if action["kind"] == "confluence" else None
+        parent_path = action.get("parent_path")
         if parent_path in by_path:
             visit(parent_path)
         visiting.remove(path)
@@ -350,8 +348,13 @@ def _is_valid_plan(plan: object) -> bool:
             return False
         if not _is_valid_payload(action["kind"], action["payload"]):
             return False
-        if action["kind"] == "confluence" and action.get("parent_path"):
-            if not _is_safe_document_path(action["parent_path"]):
+        if action.get("parent_path"):
+            valid_parent = (
+                _is_safe_document_path(action["parent_path"])
+                if action["kind"] == "confluence"
+                else _is_safe_task_path(action["parent_path"])
+            )
+            if not valid_parent:
                 return False
         if action["action"] == "update" and not action.get("external_id"):
             return False
@@ -378,6 +381,26 @@ def _is_safe_document_path(path: object) -> bool:
     if not _is_safe_plan_path(path):
         return False
     return Path(path).parts[:1] == ("documents",)
+
+
+def _is_safe_task_path(path: object) -> bool:
+    """Return whether a path can identify a Jira parent task document."""
+
+    if not _is_safe_plan_path(path):
+        return False
+    return Path(path).parts[:1] == ("gtd_tasks",)
+
+
+def _infer_nested_parent_path(repo_root: Path, path: Path) -> Optional[str]:
+    """Infer the conventional parent Markdown path for a nested detail file."""
+
+    relative = path.relative_to(repo_root)
+    if len(relative.parts) < 3:
+        return None
+    candidate = path.parent.parent / (path.parent.name + ".md")
+    if not candidate.is_file():
+        return None
+    return str(candidate.relative_to(repo_root)).replace("\\", "/")
 
 
 def _is_valid_payload(kind: str, payload: Dict) -> bool:
@@ -428,6 +451,10 @@ def _set_external(
             lines, "jira_key", result.get("key") or result.get("id") or ""
         )
         frontmatter.set_value(lines, "jira_url", result.get("url") or "")
+        if payload and payload.get("parent_key"):
+            frontmatter.set_value(
+                lines, "jira_parent_key", str(payload["parent_key"])
+            )
     else:
         frontmatter.set_value(lines, "confluence_page_id", str(result.get("id") or ""))
         frontmatter.set_value(lines, "confluence_url", result.get("url") or "")
@@ -459,26 +486,41 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     created_external_ids: Dict[str, str] = {}
     for action, path in zip(plan["actions"], paths):
         payload = dict(action["payload"])
-        if action["kind"] == "confluence" and action.get("parent_path"):
+        if action.get("parent_path"):
             parent_path = action["parent_path"]
             parent_id = created_external_ids.get(parent_path)
             if not parent_id:
                 parent = _managed_action_path(repo_root, parent_path)
                 if parent.is_file():
                     parent_lines = parent.read_text(encoding="utf-8").splitlines()
-                    parent_id = frontmatter.value(parent_lines, "confluence_page_id")
+                    parent_id = frontmatter.value(
+                        parent_lines,
+                        "confluence_page_id"
+                        if action["kind"] == "confluence"
+                        else "jira_key",
+                    )
             if not parent_id:
-                raise SyncError(
-                    "Confluence parent page is unresolved: {}".format(parent_path)
+                label = (
+                    "Confluence parent page"
+                    if action["kind"] == "confluence"
+                    else "Jira parent issue"
                 )
-            payload["parent_id"] = parent_id
+                raise SyncError("{} is unresolved: {}".format(label, parent_path))
+            payload[
+                "parent_id" if action["kind"] == "confluence" else "parent_key"
+            ] = parent_id
         if action["action"] == "create":
             result = adapter.create(action["kind"], payload)
         else:
             result = adapter.update(action["kind"], action["external_id"], payload)
         _set_external(path, action["kind"], result, payload)
-        if action["kind"] == "confluence" and result.get("id"):
-            created_external_ids[action["path"]] = str(result["id"])
+        external_id = (
+            result.get("id")
+            if action["kind"] == "confluence"
+            else result.get("key") or result.get("id")
+        )
+        if external_id:
+            created_external_ids[action["path"]] = str(external_id)
         _write_base(repo_root, path, parse_document(str(path)).public_body)
         results.append(
             {"action_id": action["action_id"], "path": action["path"], "result": result}

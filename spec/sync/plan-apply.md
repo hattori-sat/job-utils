@@ -39,6 +39,12 @@ parent Markdown file. Apply orders parent actions before children and passes a
 newly-created parent's page ID to the child request. The resolved
 `confluence_parent_id` is written back to the child front matter.
 
+Jira subtask actions use the same dependency model. A child task may carry
+`jira_parent_path`; apply orders the Jira parent first and passes its created or
+stored issue key to the child request. The resolved `jira_parent_key` is
+written back to the child front matter. An unresolved required parent stops
+the apply before the child request is sent.
+
 The adapter boundary supports a deterministic memory adapter for tests and an
 HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
 

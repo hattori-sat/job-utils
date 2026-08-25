@@ -43,7 +43,6 @@
 **Files:**
 - Modify: `src/jobutils/gtd/dispatcher.py`
 - Modify: `src/jobutils/sync/engine.py`
-- Modify: `src/jobutils/gtd/documents.py`
 - Modify: `spec/gtd/markdown-format.md`
 - Test: `tests/test_gtd_dispatch.py`
 - Test: `tests/test_sync.py`
@@ -53,13 +52,13 @@
 - `create_plan()` records a safe Jira `parent_path` for a child task and orders the parent action before the child action.
 - `apply_plan()` resolves a Jira parent key from a newly-created parent result or an existing parent Markdown file before invoking the child adapter.
 
-- [ ] Add tests for a published parent without `jira_key`, a published child with `jira_parent_path`, parent-first plan ordering, and child payloads receiving the created Jira key.
-- [ ] Run the focused dispatch and sync tests and verify the new dependency tests fail.
-- [ ] Add `jira_parent_path` to task templates and inherit `publish_jira`, project, and sub-task issue type without requiring the parent key to already exist.
-- [ ] Infer the parent path for existing nested task files when the explicit field is absent, while rejecting unsafe or cyclic relationships.
-- [ ] Generalize apply dependency resolution to Jira and Confluence without changing manual `jira_parent_key` behavior.
-- [ ] Run the focused tests and verify unresolved parents fail before any child write.
-- [ ] Commit as `feat: resolve Jira parent dependencies`.
+- [x] Add tests for a published parent without `jira_key`, a published child with `jira_parent_path`, parent-first plan ordering, and child payloads receiving the created Jira key.
+- [x] Run the focused dispatch and sync tests and verify the new dependency tests fail.
+- [x] Add `jira_parent_path` to task templates and inherit `publish_jira`, project, and sub-task issue type without requiring the parent key to already exist.
+- [x] Infer the parent path for existing nested task files when the explicit field is absent, while rejecting unsafe or cyclic relationships.
+- [x] Generalize apply dependency resolution to Jira and Confluence without changing manual `jira_parent_key` behavior.
+- [x] Run the focused tests and verify unresolved parents fail before any child write.
+- [x] Commit as `feat: resolve Jira parent dependencies`.
 
 ### Task 3: Add Vim command and documentation surfaces
 

@@ -167,6 +167,18 @@ the newest plan when no path is supplied and asks for confirmation before it
 writes to Jira or Confluence. `:GtdSyncPull` also asks for confirmation before
 writing pulled changes into local Markdown.
 
+If an external Jira issue key or Confluence page ID changes, use the local
+rebind command before creating a new plan:
+
+```text
+jobutils sync rebind --repo /absolute/path/to/your-gtd-repository \
+  --path documents/guide.md --kind confluence --external-id 12345 \
+  --url https://example.invalid/wiki/pages/12345 --parent-id 67890
+```
+
+Rebind updates front matter only; it does not contact Jira or Confluence.
+Afterward, run `sync plan` again and review the resulting actions.
+
 Generated reports are placed under `.jobutils/output/<generation-date>/<period>/`
 and are ignored by Git. Metric event JSONL remains source data and should be
 committed with the GTD Repository.
