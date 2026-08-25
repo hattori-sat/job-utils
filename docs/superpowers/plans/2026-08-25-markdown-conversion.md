@@ -118,7 +118,7 @@ Confluence storage XML-like markup, `unittest`.
 - [x] Inspect the public diff for credentials, real Atlassian identifiers,
   local paths, and unnecessary private context.
 - [x] Request code review and resolve Critical/Important findings.
-- [ ] Push only `codex/pr-markdown-conversion` and open one PR against `main`.
+- [x] Push only `codex/pr-markdown-conversion` and open one PR against `main`.
   Do not merge it.
 
 Verification so far: 91 tests pass, `git diff --check` is clean, and the final
