@@ -25,7 +25,8 @@ Repository remains the source of Markdown data throughout the roadmap.
 
 4. **Content conversion**
    - Deterministic Markdown conversion for Jira ADF and Confluence storage.
-   - Tables, links, images, code blocks, lists, and supported macros.
+   - Tables, links, images, code blocks, lists, and explicit supported macros,
+     with Markdown round-trip tests for the external representations.
    - Local-only Implementation Notes and preserved conflict markers.
 
 5. **External synchronization**
