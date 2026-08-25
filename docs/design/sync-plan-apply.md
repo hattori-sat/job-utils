@@ -16,14 +16,17 @@ response shapes.
 
 ## Current operational modes
 
-- `sync plan` is read-only with respect to Jira and Confluence.
+- `sync check` refreshes Git remote-tracking data and Jira/Confluence records
+  into ignored local observation state without commit or push.
+- `sync plan` is read-only with respect to Jira and Confluence and consumes the
+  latest observation.
 - `sync apply --adapter memory` is deterministic for tests and local exercises.
 - `sync apply --adapter atlassian` reads credentials from environment variables
-  and calls the current Atlassian Cloud REST endpoints.
-- `sync pull` fast-forwards the Markdown repository, imports external content,
-  uses the saved public-body base for a three-way merge, and commits/pushes any
-  resulting local changes. Conflict markers remain in Markdown for Vim
-  resolution.
+  and calls the current Atlassian Cloud REST endpoints. It commits once after
+  all actions and pushes that commit.
+- External-only changes become `import` actions; two-sided changes become
+  conflict actions that write markers for Vim resolution and stop before an
+  external write.
 
 The external adapter is deliberately not invoked by Vim's `:Gtd` command.
 GTD movement remains a local operation; synchronization is an explicit review

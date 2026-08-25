@@ -44,32 +44,36 @@ Only files whose front matter enables `publish_jira: true` or
 `publish_confluence: true` are included in synchronization.
 
 1. Save the Markdown file.
-2. Run `:GtdSyncPlan` and review the generated plan summary.
-3. Run `:GtdSyncApply` and confirm the prompt.
+2. Run `:GtdSyncCheck` and confirm the refresh prompt.
+3. Run `:GtdSyncPlan` and review the generated plan summary.
+4. Run `:GtdSyncApply` and confirm the prompt.
 
 Apply updates Jira or Confluence, writes returned IDs and URLs to front
 matter, commits the Markdown and synchronization state, and pushes the commit
 to the configured Git remote. Implementation Notes remain local.
 
-## Start work on another computer
+## Synchronize before editing
 
-Run `:GtdSyncPull` before editing. It performs the complete inbound operation:
+Run `:GtdSyncCheck` before planning work on another computer or after an
+external Jira/Confluence edit. Confirm the refresh prompt. It updates Git's
+remote-tracking information, fetches current Jira and Confluence records, and
+writes an ignored observation without committing or pushing.
 
-The equivalent Python entry point is:
+Then run:
 
 ```text
-jobutils sync pull --repo /path/to/gtd --adapter atlassian
+:GtdSyncPlan
+:GtdSyncApply
 ```
 
-1. fast-forward the Markdown repository from GitHub;
-2. import changed Jira and Confluence content;
-3. write conflict markers when both sides changed;
-4. commit and push imported changes when needed.
+An external-only change becomes an import action. If both Markdown and the
+external record changed, apply writes conflict markers into the Markdown file
+and stops without an external write. Resolve the markers in Vim, save, run
+`:GtdSyncCheck` and `:GtdSyncPlan` again, then apply the reviewed plan.
 
-The user does not need separate GitHub, Jira, or Confluence pull commands. If
-the fast-forward cannot be completed, stop, resolve the Git state, and retry
-`:GtdSyncPull`. If a Markdown/external conflict is reported, resolve the
-markers in Vim, save, run `:GtdSyncPlan`, and apply the reviewed plan.
+There is no separate GitHub, Jira, or Confluence pull command in the normal
+workflow. `:GtdSyncApply` commits once after all approved actions and pushes
+that commit.
 
 ## Review and reports
 

@@ -442,20 +442,6 @@ function! jobutils#gtd#sync_apply(plan) abort
   echo 'GTD: sync apply, commit, and push completed'
 endfunction
 
-function! jobutils#gtd#sync_pull() abort
-  if !s:confirm_sync('Synchronize Git and external changes? (Y)es/(N)o: ', 'Y')
-    echom 'GTD: sync pull cancelled'
-    return
-  endif
-  let l:result = s:run_cli('sync pull --adapter atlassian')
-  if !l:result.ok
-    call s:show_error(l:result.output, 'GTD: sync pull failed')
-    return
-  endif
-  call s:show_output(l:result.output)
-  echo 'GTD: Git and Jira/Confluence synchronization completed'
-endfunction
-
 function! jobutils#gtd#sync_status() abort
   let l:result = s:run_cli('sync status')
   if !l:result.ok
@@ -512,22 +498,25 @@ function! jobutils#gtd#sync_rebind(requested) abort
 endfunction
 
 function! jobutils#gtd#sync_check() abort
+  if !s:confirm_sync('Refresh Git, Jira, and Confluence state? (Y)es/(N)o: ', 'Y')
+    echom 'GTD: sync check cancelled'
+    return
+  endif
   let l:result = s:run_cli('sync check --adapter atlassian')
   if !l:result.ok
     call s:show_error(l:result.output, 'GTD: sync check failed')
     return
   endif
   call s:show_output(l:result.output)
-  echo 'GTD: sync check completed'
+  echo 'GTD: sync check completed; review the drift before planning'
 endfunction
 
 function! jobutils#gtd#sync_help() abort
   echo ':GtdSyncPlan              create a reviewable synchronization plan'
   echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
-  echo ':GtdSyncPull              synchronize Git and external changes'
   echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
   echo ':GtdSyncRebind [path]     update a stored Jira/Confluence identity locally'
-  echo ':GtdSyncCheck             inspect external drift without changing files'
-  echo 'GtdSyncPull owns both Git and Jira/Confluence synchronization.'
+  echo ':GtdSyncCheck             refresh Git/Jira/Confluence and inspect drift'
+  echo 'Use check, then plan, then apply. Apply commits once and pushes once.'
   echo ':GtdSyncHelp              show synchronization commands'
 endfunction

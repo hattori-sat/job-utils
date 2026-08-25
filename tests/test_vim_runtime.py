@@ -465,7 +465,6 @@ class VimRuntimeTests(unittest.TestCase):
         commands = (
             "GtdSyncPlan",
             "GtdSyncApply",
-            "GtdSyncPull",
             "GtdSyncStatus",
             "GtdSyncRebind",
             "GtdSyncCheck",
@@ -482,7 +481,6 @@ class VimRuntimeTests(unittest.TestCase):
             for alias in (
                 "gtdsyncplan",
                 "gtdsyncapply",
-                "gtdsyncpull",
                 "gtdsyncstatus",
                 "gtdsyncrebind",
                 "gtdsynccheck",
@@ -498,6 +496,8 @@ class VimRuntimeTests(unittest.TestCase):
             "+if {} | cquit 91 | endif".format(alias_check),
             "+if exists(':GtdStart') == 2 || exists(':GtdStop') == 2 || exists(':GtdGitPush') == 2 | cquit 92 | endif",
             "+if g:jobutils_abbreviations =~# 'gtdstart' || g:jobutils_abbreviations =~# 'gtdstop' || g:jobutils_abbreviations =~# 'gtdgitpush' | cquit 93 | endif",
+            "+if exists(':GtdSyncPull') == 2 | cquit 94 | endif",
+            "+if g:jobutils_abbreviations =~# 'gtdsyncpull' | cquit 95 | endif",
         ]
         result = subprocess.run(
             [
@@ -666,6 +666,7 @@ class VimRuntimeTests(unittest.TestCase):
                         "set rtp^={}".format(vim_runtime),
                         "source {}/plugin/jobutils_gtd.vim".format(vim_runtime),
                         "edit {}/gtd.md".format(root),
+                        "let g:jobutils_sync_confirm = 'Y'",
                         "GtdSyncCheck",
                         "call writefile([execute('messages')], '{}')".format(messages),
                         "qa!",

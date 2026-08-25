@@ -13,7 +13,6 @@ from .env import load_local_env
 from .gitops import (
     GitOperationError,
     commit as git_commit,
-    pull as git_pull,
     push as git_push,
     status as git_status,
 )
@@ -38,7 +37,6 @@ from .sync.engine import (
     apply_plan,
     check,
     create_plan,
-    pull,
     rebind,
     save_plan,
     sync_status,
@@ -139,15 +137,15 @@ def _parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--remote", default="origin")
     apply_parser.add_argument("--branch", default="")
     apply_parser.add_argument("--set-upstream", action="store_true")
-    pull_parser = sync_subparsers.add_parser("pull")
-    pull_parser.add_argument("--repo", default=".")
-    pull_parser.add_argument(
-        "--adapter", choices=("memory", "atlassian"), default="atlassian"
-    )
     check_parser = sync_subparsers.add_parser("check")
     check_parser.add_argument("--repo", default=".")
     check_parser.add_argument(
         "--adapter", choices=("memory", "atlassian"), default="atlassian"
+    )
+    check_parser.add_argument(
+        "--no-git-fetch",
+        action="store_true",
+        help="inspect external records without refreshing the Git remote",
     )
     rebind_parser = sync_subparsers.add_parser("rebind")
     rebind_parser.add_argument("--repo", default=".")
@@ -311,11 +309,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if args.git_sync is not None
                 else args.adapter == "atlassian"
             )
-            pre_apply_commit = None
-            if git_sync and git_status(repo).strip():
-                pre_apply_commit = git_commit(
-                    repo, "chore: save GTD changes before sync apply"
-                )
             plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
             if args.adapter == "memory":
                 adapter = MemoryAdapter()
@@ -335,7 +328,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if git_status(repo).strip():
                     commit_result = git_commit(repo, args.commit_message)
                 response["git"] = {
-                    "pre_apply_commit": pre_apply_commit,
                     "commit": commit_result,
                     "push": git_push(
                         repo,
@@ -348,48 +340,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         except (OSError, ValueError, SyncError, RuntimeError, GitOperationError) as error:
             print("SYNC: apply failed: {}".format(error), file=sys.stderr)
-            return 1
-    if args.domain == "sync" and args.operation == "pull":
-        try:
-            repo = Path(args.repo)
-            git_result = git_pull(repo)
-            if args.adapter == "memory":
-                adapter = MemoryAdapter()
-            else:
-                adapter = AtlassianHttpAdapter(
-                    {
-                        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-                        "confluence_base_url": os.environ.get(
-                            "CONFLUENCE_BASE_URL", ""
-                        ),
-                    }
-                )
-            external_results = pull(repo, adapter)
-            response = {
-                "git": {
-                    "pull": git_result,
-                    "commit": None,
-                    "push": None,
-                },
-                "external": external_results,
-            }
-            if git_status(repo).strip():
-                commit_result = git_commit(
-                    repo, "chore: synchronize pulled GTD changes"
-                )
-                response["git"]["commit"] = commit_result
-                response["git"]["push"] = git_push(repo)
-            print(json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True))
-            return 0
-        except (
-            OSError,
-            ValueError,
-            SyncError,
-            RuntimeError,
-            KeyError,
-            GitOperationError,
-        ) as error:
-            print("SYNC: pull failed: {}".format(error), file=sys.stderr)
             return 1
     if args.domain == "sync" and args.operation == "rebind":
         try:
@@ -419,7 +369,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                         ),
                     }
                 )
-            result = check(Path(args.repo), adapter)
+            result = check(
+                Path(args.repo), adapter, refresh_git=not args.no_git_fetch
+            )
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
             if result["error_count"]:
                 print(

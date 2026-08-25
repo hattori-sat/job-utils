@@ -8,21 +8,21 @@ normal use.
 
 ```text
 jobutils sync apply --repo REPOSITORY --plan PLAN --adapter atlassian
-jobutils sync pull --repo REPOSITORY --adapter atlassian
+jobutils sync check --repo REPOSITORY --adapter atlassian
+jobutils sync plan --repo REPOSITORY
 ```
 
-`sync apply` automatically commits pending local changes after the normal
-credential-path checks, performs the external Jira/Confluence apply, commits
-the resulting Markdown and `.jobutils` synchronization state, and pushes the
-commits.
+`sync check` refreshes Git remote-tracking data and current Jira/Confluence
+records, then writes an ignored observation. It never commits or pushes.
 
-`sync pull` fast-forwards the local branch first, imports external changes,
-then commits and pushes any resulting local changes. A dirty worktree or a
-non-fast-forward branch stops the operation before external requests.
+`sync plan` turns the observation into publish, import, or conflict actions.
+`sync apply` automatically commits pending local changes together with the
+resulting Markdown and `.jobutils` synchronization state after all actions
+complete, then pushes the one clean commit.
 
 ## Internal boundary
 
-The Python `gitops` module retains direct `commit`, `pull`, `push`, and
+The Python `gitops` module retains direct `commit`, `fetch`, `pull`, `push`, and
 `push_mock` functions for tests and controlled recovery. They use Git without a
 shell, delegate authentication to Git, reject credential-shaped files before a
 commit, never force-push, and redact credential-shaped URLs from errors. These
