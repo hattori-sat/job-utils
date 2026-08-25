@@ -250,7 +250,7 @@ private
             """---
 gtd_id: 'parent-1'
 publish_jira: true
-jira_project: 'LIG'
+jira_project: 'DEMO'
 jira_key: null
 ---
 

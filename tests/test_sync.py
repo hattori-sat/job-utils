@@ -456,7 +456,7 @@ gtd_id: 'task-1'
 kind: 'task'
 title: 'Task'
 publish_jira: 'true'
-jira_project: 'LIG'
+jira_project: 'DEMO'
 jira_issue_type: 'Task'
 ---
 
@@ -579,7 +579,7 @@ Objective.
                 "title": "Guide",
                 "storage_body": "<h1>Guide</h1>",
                 "space_id": "space-1",
-                "space_key": "KB",
+                "space_key": "DOCS",
                 "version": 0,
             },
         }
@@ -804,11 +804,11 @@ Objective.
         child = parent.with_suffix("") / "child.md"
         child.parent.mkdir()
         parent.write_text(
-            "---\ngtd_id: parent\nkind: task\ntitle: Parent\npublish_jira: true\njira_project: LIG\n---\n\n# Summary\nParent\n",
+            "---\ngtd_id: parent\nkind: task\ntitle: Parent\npublish_jira: true\njira_project: DEMO\n---\n\n# Summary\nParent\n",
             encoding="utf-8",
         )
         child.write_text(
-            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: LIG\njira_issue_type: Sub-task\njira_parent_path: gtd_tasks/parent.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
+            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: DEMO\njira_issue_type: Sub-task\njira_parent_path: gtd_tasks/parent.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
             encoding="utf-8",
         )
 
@@ -838,7 +838,7 @@ Objective.
     def test_jira_parent_path_without_parent_identity_fails_before_child_write(self):
         child = self.repo / "gtd_tasks" / "child.md"
         child.write_text(
-            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: LIG\njira_parent_path: gtd_tasks/missing.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
+            "---\ngtd_id: child\nkind: task\ntitle: Child\npublish_jira: true\njira_project: DEMO\njira_parent_path: gtd_tasks/missing.md\njira_parent_key: null\n---\n\n# Summary\nChild\n",
             encoding="utf-8",
         )
         adapter = MemoryAdapter()
