@@ -105,7 +105,7 @@ def parse_document(path: str) -> MarkdownDocument:
 def public_markdown_links(body: str, published: Dict[str, str]) -> str:
     """Replace local Markdown links with published URLs when available."""
 
-    pattern = re.compile(r"(!?\[[^\]]*\])\(([^)]+)\)")
+    pattern = re.compile(r"(!?\[[^\]]*\])\(((?:[^()]|\([^()]*\))*)\)")
 
     def replace(match: re.Match) -> str:
         target = match.group(2)
@@ -122,7 +122,7 @@ def public_markdown_links(body: str, published: Dict[str, str]) -> str:
 
 
 _INLINE_LINK = re.compile(
-    r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)"
+    r"(!?)\[([^\]]*)\]\(((?:[^()]|\([^()]*\))*)(?:\s+\"[^\"]*\")?\)"
 )
 _MACRO = re.compile(
     r"^:::confluence-macro\s+name=(?:\"([^\"]+)\"|'([^']+)'|(\S+))\s*$"

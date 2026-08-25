@@ -48,9 +48,10 @@ Useful **context**.
 
     def test_external_urls_are_preserved_and_unsafe_schemes_are_removed(self):
         rendered = markdown_to_storage(
-            "[safe](https://example.com) [mail](mailto:user@example.com) [bad](javascript:alert(1)) [file](attachment:../../secret)"
+            "[safe](https://example.com) [paren](https://example.com/a(b)) [mail](mailto:user@example.com) [bad](javascript:alert(1)) [file](attachment:../../secret)"
         )
         self.assertIn('href="https://example.com"', rendered)
+        self.assertIn('href="https://example.com/a(b)"', rendered)
         self.assertIn('href="mailto:user@example.com"', rendered)
         self.assertNotIn("javascript:", rendered)
         self.assertNotIn('href="javascript:', rendered)
