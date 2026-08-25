@@ -96,7 +96,8 @@ Markdown buffers use Vim's native list formatting. Press Enter after an
 unordered (`-`, `*`, or `+`) list item to continue its marker. Numbered list
 markers are recognized by Vim's native formatter for indentation and wrapping;
 the number itself is not auto-incremented. The behavior is buffer-local and
-does not change Makefile literal-tab handling.
+does not change Makefile literal-tab handling. Technical `snake_case`
+identifiers are not rendered as Markdown syntax errors.
 
 `:Gtd` and `:GtdTask` have separate responsibilities. `:Gtd` only moves
 prefixed lines between GTD sections; it does not create task Markdown. Use

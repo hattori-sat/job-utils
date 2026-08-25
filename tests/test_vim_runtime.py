@@ -113,6 +113,33 @@ class VimRuntimeTests(unittest.TestCase):
                     ),
                 )
 
+    def test_markdown_snake_case_underscore_is_not_an_error(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        result = subprocess.run(
+            [
+                vim,
+                "-Nu",
+                "NONE",
+                "-n",
+                "-es",
+                "+set rtp^=" + str(vim_runtime),
+                "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+                '+call setline(1, ["snake_case", "jira_issue_type: Task"])',
+                "+set filetype=markdown",
+                '+if synIDattr(synIDtrans(synID(1, 6, 1)), "name") ==# "Error" | cquit 61 | endif',
+                '+if synIDattr(synIDtrans(synID(2, 5, 1)), "name") ==# "Error" | cquit 62 | endif',
+                "+qa!",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
     def test_runtime_sources_in_classic_vim(self):
         vim = shutil.which("vim")
         if vim is None:
