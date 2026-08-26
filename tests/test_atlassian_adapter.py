@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from jobutils.sync.adapters import (
     AtlassianHttpAdapter,
     ConfluenceDataCenterUploadAdapter,
+    JiraCloudConfluenceDataCenterAdapter,
 )
 
 
@@ -348,6 +349,18 @@ class AtlassianAdapterTests(unittest.TestCase):
         args = request_mock.call_args.args
         self.assertEqual(args[1], "/rest/api/content/42")
         self.assertEqual(args[5]["version"], {"number": 5})
+
+    def test_hybrid_adapter_routes_jira_to_cloud_and_confluence_to_datacenter(self):
+        adapter = JiraCloudConfluenceDataCenterAdapter(self.adapter.config)
+        with patch.object(adapter.jira, "create", return_value={"key": "TASK-1"}) as jira_create:
+            with patch.object(
+                adapter.confluence, "create", return_value={"id": "42"}
+            ) as confluence_create:
+                adapter.create("jira", {"title": "Task"})
+                adapter.create("confluence", {"title": "Guide"})
+
+        jira_create.assert_called_once_with("jira", {"title": "Task"})
+        confluence_create.assert_called_once_with("confluence", {"title": "Guide"})
 
 
 if __name__ == "__main__":

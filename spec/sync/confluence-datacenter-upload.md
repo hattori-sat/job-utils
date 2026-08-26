@@ -14,10 +14,15 @@ initial scope.
 - Parent: `ancestors: [{"id": "..."}]` on create when a parent ID is present
 - Version: incremented in the update request
 
-The configured `CONFLUENCE_BASE_URL` is used as-is, including a Data Center
-installation context path such as `/confluence`. Authentication uses the
-existing `CONFLUENCE_AUTH_TYPE` setting; Data Center installations commonly
-use `basic` with `CONFLUENCE_EMAIL` and `CONFLUENCE_API_TOKEN`.
+Set `CONFLUENCE_PLATFORM=datacenter`. The configured `CONFLUENCE_BASE_URL` is
+used as-is, including a Data Center installation context path such as
+`/confluence`. Authentication uses the existing `CONFLUENCE_AUTH_TYPE` setting;
+Data Center installations commonly use `basic` with `CONFLUENCE_EMAIL` and
+`CONFLUENCE_API_TOKEN`.
+
+With this profile, normal apply routes Jira actions to the Jira Cloud adapter
+and Confluence actions to this upload-only adapter. The explicit
+`confluence-datacenter` adapter remains available for document-only plans.
 
 Use:
 

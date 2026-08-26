@@ -445,6 +445,8 @@ class AtlassianHttpAdapter(SyncAdapter):
 class ConfluenceDataCenterUploadAdapter(AtlassianHttpAdapter):
     """Upload-only adapter for the Confluence Data Center content API."""
 
+    upload_only = True
+
     def _ensure_confluence(self, kind: str) -> None:
         if kind != "confluence":
             raise RuntimeError(
@@ -540,3 +542,31 @@ class ConfluenceDataCenterUploadAdapter(AtlassianHttpAdapter):
         self, kind: str, external_id: str, options: Optional[Dict] = None
     ) -> Dict:
         raise RuntimeError("Confluence Data Center adapter is upload-only")
+
+
+class JiraCloudConfluenceDataCenterAdapter(SyncAdapter):
+    """Route Jira to Cloud and Confluence to its Data Center uploader."""
+
+    upload_only_kinds = frozenset(("confluence",))
+
+    def __init__(self, config: Dict):
+        self.jira = AtlassianHttpAdapter(config)
+        self.confluence = ConfluenceDataCenterUploadAdapter(config)
+
+    def _adapter(self, kind: str) -> SyncAdapter:
+        if kind == "jira":
+            return self.jira
+        if kind == "confluence":
+            return self.confluence
+        raise ValueError("unsupported synchronization kind: {}".format(kind))
+
+    def create(self, kind: str, payload: Dict) -> Dict:
+        return self._adapter(kind).create(kind, payload)
+
+    def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
+        return self._adapter(kind).update(kind, external_id, payload)
+
+    def fetch(
+        self, kind: str, external_id: str, options: Optional[Dict] = None
+    ) -> Dict:
+        return self._adapter(kind).fetch(kind, external_id, options)

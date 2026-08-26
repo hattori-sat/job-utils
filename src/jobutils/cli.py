@@ -36,6 +36,7 @@ from .setup_workflow import SetupError, run_setup
 from .sync.adapters import (
     AtlassianHttpAdapter,
     ConfluenceDataCenterUploadAdapter,
+    JiraCloudConfluenceDataCenterAdapter,
     MemoryAdapter,
 )
 from .sync.engine import (
@@ -179,6 +180,43 @@ def _parser() -> argparse.ArgumentParser:
     setup_init.add_argument("--platform", default=None)
     setup_init.add_argument("--skip-env-prompt", action="store_true")
     return parser
+
+
+def _confluence_platform() -> str:
+    """Return the configured Confluence deployment or fail clearly."""
+
+    value = os.environ.get("CONFLUENCE_PLATFORM", "cloud").strip().casefold()
+    if value not in ("cloud", "datacenter"):
+        raise RuntimeError(
+            "CONFLUENCE_PLATFORM must be one of: cloud, datacenter"
+        )
+    return value
+
+
+def _build_atlassian_adapter(adapter_name: str, for_apply: bool = False):
+    """Build the selected Atlassian adapter using the setup profile."""
+
+    if adapter_name == "memory":
+        return MemoryAdapter()
+    if adapter_name == "confluence-datacenter":
+        return ConfluenceDataCenterUploadAdapter(
+            {"confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", "")}
+        )
+    if for_apply and _confluence_platform() == "datacenter":
+        return JiraCloudConfluenceDataCenterAdapter(
+            {
+                "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+                "confluence_base_url": os.environ.get(
+                    "CONFLUENCE_BASE_URL", ""
+                ),
+            }
+        )
+    return AtlassianHttpAdapter(
+        {
+            "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+            "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
+        }
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -354,25 +392,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 else args.adapter in ("atlassian", "confluence-datacenter")
             )
             plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
-            if args.adapter == "memory":
-                adapter = MemoryAdapter()
-            elif args.adapter == "confluence-datacenter":
-                adapter = ConfluenceDataCenterUploadAdapter(
-                    {
-                        "confluence_base_url": os.environ.get(
-                            "CONFLUENCE_BASE_URL", ""
-                        )
-                    }
-                )
-            else:
-                adapter = AtlassianHttpAdapter(
-                    {
-                        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-                        "confluence_base_url": os.environ.get(
-                            "CONFLUENCE_BASE_URL", ""
-                        ),
-                    }
-                )
+            adapter = _build_atlassian_adapter(args.adapter, for_apply=True)
             if git_sync:
                 git_state = git_fetch(repo, remote=args.remote)
                 if git_state.get("state") in ("remote_ahead", "diverged"):
@@ -418,17 +438,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 1
     if args.domain == "sync" and args.operation == "check":
         try:
-            if args.adapter == "memory":
-                adapter = MemoryAdapter()
-            else:
-                adapter = AtlassianHttpAdapter(
-                    {
-                        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-                        "confluence_base_url": os.environ.get(
-                            "CONFLUENCE_BASE_URL", ""
-                        ),
-                    }
-                )
+            adapter = _build_atlassian_adapter(args.adapter)
             result = check(
                 Path(args.repo), adapter, refresh_git=not args.no_git_fetch
             )

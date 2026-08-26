@@ -18,6 +18,7 @@ values in Markdown front matter, metric events, setup logs, or reports.
 | `JIRA_DESCRIPTION_FIELD` | Jira Description field ID; defaults to the standard system field `description`. |
 | `JIRA_PROGRESS_COMMENT_FIELD` | Optional Jira custom-field ID for Progress Comment. |
 | `JIRA_PROGRESS_COMMENT_FORMAT` | `text` for a text field or `adf` for an Atlassian document field. |
+| `CONFLUENCE_PLATFORM` | Confluence deployment: `cloud` (default) or `datacenter`. Setup asks this on the first configuration run. |
 | `CONFLUENCE_BASE_URL` | Atlassian base URL for Confluence. For Data Center, include the installation context path when needed, such as `https://confluence.example.com/confluence`. |
 | `CONFLUENCE_AUTH_TYPE` | `bearer` (default) or `basic`; selects the Confluence Authorization header. |
 | `CONFLUENCE_EMAIL` | Atlassian account email used only when `CONFLUENCE_AUTH_TYPE=basic`. |

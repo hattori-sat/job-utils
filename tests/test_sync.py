@@ -11,13 +11,17 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.cli import main
+from jobutils.cli import _build_atlassian_adapter, main
 from jobutils.markdown.normalize import (
     canonical_sync_body,
     markdown_to_storage,
     parse_document,
 )
-from jobutils.sync.adapters import MemoryAdapter
+from jobutils.sync.adapters import (
+    AtlassianHttpAdapter,
+    JiraCloudConfluenceDataCenterAdapter,
+    MemoryAdapter,
+)
 from jobutils.sync.engine import (
     SyncError,
     apply_plan,
@@ -39,6 +43,27 @@ class SyncTests(unittest.TestCase):
 
     def tearDown(self):
         self.tempdir.cleanup()
+
+    def test_apply_adapter_uses_configured_confluence_platform(self):
+        with patch.dict(
+            os.environ,
+            {
+                "CONFLUENCE_PLATFORM": "datacenter",
+                "JIRA_BASE_URL": "https://jira.example",
+                "CONFLUENCE_BASE_URL": "https://confluence.example",
+            },
+            clear=True,
+        ):
+            adapter = _build_atlassian_adapter("atlassian", for_apply=True)
+            check_adapter = _build_atlassian_adapter("atlassian")
+
+        self.assertIsInstance(adapter, JiraCloudConfluenceDataCenterAdapter)
+        self.assertIsInstance(check_adapter, AtlassianHttpAdapter)
+
+    def test_invalid_confluence_platform_fails_before_apply(self):
+        with patch.dict(os.environ, {"CONFLUENCE_PLATFORM": "server"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "CONFLUENCE_PLATFORM"):
+                _build_atlassian_adapter("atlassian", for_apply=True)
 
     def test_plan_and_apply_exclude_implementation_notes(self):
         path = self.repo / "documents" / "guide.md"

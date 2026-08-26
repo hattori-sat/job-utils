@@ -67,6 +67,11 @@ values are entered normally; Jira and Confluence tokens are requested with
 hidden input. Existing values are preserved. The file is ignored by Git and
 must never be copied into the Markdown Repository.
 
+On the first configuration run, setup asks whether Confluence is `cloud` or
+`datacenter` and saves the choice as `CONFLUENCE_PLATFORM`. Press Enter to use
+Cloud. A later setup run preserves the existing choice unless the value is
+changed in `.env`.
+
 See [environment variables](environment-variables.md) for the meaning of each
 setting. The lower-level operation is:
 
@@ -105,8 +110,11 @@ shown in the setup output.
   through unchanged. A dirty or diverged repository stops before Vim opens.
 - `jobutils-activate` is an optional helper for manual Python commands.
 
-Atlassian synchronization uses Bearer tokens by default. The setup file
-contains `JIRA_AUTH_TYPE` and `CONFLUENCE_AUTH_TYPE`; set either to `basic` only
+Atlassian synchronization uses Bearer tokens by default. The setup file asks
+for the Confluence deployment (`cloud` or `datacenter`) on first setup. The
+selected deployment is used by normal apply; Jira remains on its Cloud REST
+API path. The setup file contains `JIRA_AUTH_TYPE` and
+`CONFLUENCE_AUTH_TYPE`; set either to `basic` only
 when using an email plus Basic API token. Jira issue synchronization uses REST
 API v2.
 

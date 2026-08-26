@@ -23,13 +23,18 @@ class SetupProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".env.example").write_text(
-                "JIRA_API_TOKEN=\nCONFLUENCE_API_TOKEN=\n"
+                "JIRA_API_TOKEN=\nCONFLUENCE_PLATFORM=cloud\n"
+                "CONFLUENCE_API_TOKEN=\n"
                 "JIRA_ASSIGN_TO_SELF=true\n",
                 encoding="utf-8",
             )
 
             def answer(prompt):
-                return "example-value"
+                return (
+                    "cloud"
+                    if "platform" in prompt.lower()
+                    else "example-value"
+                )
 
             def secret_answer(prompt):
                 return "test-token"
@@ -41,6 +46,43 @@ class SetupProfileTests(unittest.TestCase):
             self.assertIn("JIRA_API_TOKEN=test-token", content)
             self.assertIn("CONFLUENCE_API_TOKEN=test-token", content)
             self.assertIn("JIRA_ASSIGN_TO_SELF=true", content)
+
+    def test_first_setup_allows_selecting_confluence_datacenter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.example").write_text(
+                "CONFLUENCE_PLATFORM=cloud\n", encoding="utf-8"
+            )
+            prompts = []
+
+            def answer(prompt):
+                prompts.append(prompt)
+                return "datacenter" if "platform" in prompt.lower() else ""
+
+            ensure_env_file(root, input_fn=answer, secret_input_fn=lambda prompt: "")
+            self.assertTrue(
+                any(
+                    "Confluence platform (cloud or datacenter)" in prompt
+                    for prompt in prompts
+                )
+            )
+            self.assertIn(
+                "CONFLUENCE_PLATFORM=datacenter",
+                (root / ".env").read_text(encoding="utf-8"),
+            )
+
+    def test_invalid_confluence_platform_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.example").write_text(
+                "CONFLUENCE_PLATFORM=invalid\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(SetupError, "CONFLUENCE_PLATFORM"):
+                ensure_env_file(
+                    root,
+                    input_fn=lambda prompt: "",
+                    secret_input_fn=lambda prompt: "",
+                )
 
     def test_vimrc_registration_and_shell_profile_are_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
