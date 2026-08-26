@@ -24,7 +24,8 @@ response shapes.
 - `sync apply --adapter atlassian` reads credentials from environment variables
   and calls the current Atlassian Cloud REST endpoints. It commits once after
   all actions and pushes that commit.
-- External-only changes become `import` actions; two-sided changes become
+- External-only changes become `import` actions; independent two-sided changes
+  are merged automatically, while overlapping two-sided changes become
   conflict actions that write markers for Vim resolution and stop before an
   external write.
 

@@ -13,7 +13,7 @@ from `sync check`, then writes a reviewable JSON plan containing:
 - a plan UUID and creation time;
 - a hash of the publishable source files;
 - the observation ID used to classify external drift, when available;
-- one create/update action per external target;
+- one create/update/merge action per external target;
 - the target kind, local path, external identity, and sanitized payload;
 - import actions for external-only changes and blocking conflict actions for
   two-sided changes.
@@ -96,12 +96,16 @@ local plan.
 `sync check` refreshes both sides and records the latest observation. `sync
 plan` uses that observation together with the local Markdown and base snapshot.
 If only the external side changed, the plan contains an `import` action. If
-both sides changed, the plan contains a blocking `conflict` action. Applying a
-conflict plan writes standard conflict markers (`<<<<<<< local`, `=======`,
+both sides changed, non-overlapping line ranges are merged automatically.
+Identical changes to the same range are applied once. Only overlapping,
+different changes produce a blocking `conflict` action. Applying a conflict
+plan writes standard conflict markers (`<<<<<<< local`, `=======`,
 `>>>>>>> external`) to the public body, preserves the local Implementation
 Note, records `sync_conflict`, and stops without writing Jira or Confluence.
-The user resolves the markers in Vim, runs `sync check` and `sync plan` again,
-and applies the reviewed plan.
+The user removes all three marker lines, keeps or edits the desired content,
+saves the file, and runs `sync check`, `sync plan`, and `sync apply` again.
+The recorded conflict fingerprint then allows the resolved Markdown to become
+an `update` action; an unrelated or stale marker-free change remains blocked.
 
 The launcher and `:GtdSyncUpdate` perform only fast-forward Git updates.
 `GtdSyncApply` owns the final commit and push; no separate push command is part

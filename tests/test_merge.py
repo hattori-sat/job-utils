@@ -13,6 +13,36 @@ class MergeTests(unittest.TestCase):
         self.assertFalse(conflict)
         self.assertEqual(merged, "local\n")
 
+    def test_non_overlapping_changes_are_merged(self):
+        base = "first\nsecond\nthird\n"
+        local = "local first\nsecond\nthird\n"
+        remote = "first\nsecond\nremote third\n"
+
+        merged, conflict = three_way_merge(base, local, remote)
+
+        self.assertFalse(conflict)
+        self.assertEqual(merged, "local first\nsecond\nremote third\n")
+
+    def test_independent_appends_are_merged(self):
+        base = "first\n"
+        local = "first\nlocal addition\n"
+        remote = "first\nexternal addition\n"
+
+        merged, conflict = three_way_merge(base, local, remote)
+
+        self.assertFalse(conflict)
+        self.assertEqual(merged, "first\nlocal addition\nexternal addition\n")
+
+    def test_identical_changes_to_the_same_range_are_merged_once(self):
+        base = "first\nsecond\n"
+        local = "first\nupdated\n"
+        remote = "first\nupdated\n"
+
+        merged, conflict = three_way_merge(base, local, remote)
+
+        self.assertFalse(conflict)
+        self.assertEqual(merged, "first\nupdated\n")
+
     def test_both_sides_are_visible_as_conflict_markers(self):
         merged, conflict = three_way_merge("base\n", "local\n", "remote\n")
         self.assertTrue(conflict)
