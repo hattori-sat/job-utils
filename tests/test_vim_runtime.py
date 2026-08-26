@@ -8,6 +8,43 @@ from pathlib import Path
 
 
 class VimRuntimeTests(unittest.TestCase):
+    def test_runtime_uses_external_swap_directory(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            expected = home / ".vim" / "swap"
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env.pop("XDG_STATE_HOME", None)
+            result = subprocess.run(
+                [
+                    vim,
+                    "-Nu",
+                    "NONE",
+                    "-n",
+                    "-es",
+                    "+set rtp^=" + str(vim_runtime),
+                    "+source " + str(vim_runtime / "plugin/jobutils_defaults.vim"),
+                    "+if !isdirectory({}) | cquit 70 | endif".format(
+                        "'{}'".format(str(expected).replace("'", "''"))
+                    ),
+                    "+if stridx(&directory, {}) < 0 | cquit 71 | endif".format(
+                        "'{}'".format(str(expected).replace("'", "''"))
+                    ),
+                    "+qa!",
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
     def test_filetype_defaults_switch_disables_markdown_autocommands(self):
         vim = shutil.which("vim")
         if vim is None:

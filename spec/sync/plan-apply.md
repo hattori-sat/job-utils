@@ -24,8 +24,10 @@ When a Markdown value is empty, the plan builder uses the non-secret defaults
 loaded from the local environment: Jira project, issue type, Summary field ID,
 Description field ID, and Progress Comment field, plus Confluence space and
 default parent page. The standard Jira field IDs default to `summary` and
-`description`. Explicit front matter values take precedence. These defaults
-are never written into plans as credentials.
+`description`; setup may confirm and materialize those IDs from Jira's
+read-only field catalog. Explicit front matter values take precedence. These
+defaults are never written into plans as credentials. Progress Comment remains
+a manually configured custom field.
 
 All synchronization JSON and JSONL state belongs to the separate GTD Markdown
 Repository under `.jobutils/`: plans are stored in `sync/plans/`, the latest

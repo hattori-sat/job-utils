@@ -33,8 +33,9 @@ shell or use `jobutils-activate`; never commit the file.
 Jira field IDs use the environment defaults unless a task sets
 `jira_summary_field`, `jira_description_field`, or
 `jira_progress_comment_field` in its front matter. The standard Jira system
-field IDs are `summary` and `description`; no field-catalog request is needed
-for those defaults.
+field IDs are `summary` and `description`. During setup, Jira's field catalog
+is queried to confirm and materialize the Summary and Description IDs. The
+Progress Comment ID remains manual and is never inferred.
 
 Non-secret project, space, and parent defaults can be overridden by Markdown
 front matter. Tokens are never copied into front matter or synchronization

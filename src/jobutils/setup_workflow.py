@@ -1,5 +1,6 @@
 """Resumable, non-destructive setup workflow for job-utils."""
 
+import base64
 import getpass
 import json
 import os
@@ -11,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
+from urllib import request
+from urllib.error import HTTPError
 
 
 class SetupError(RuntimeError):
@@ -354,6 +357,106 @@ def ensure_env_file(
     if os.name != "nt":
         env_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     return env_path
+
+
+def _configured_env_value(values: Dict[str, str], key: str) -> str:
+    """Return a process override or the value stored in the local env file."""
+
+    return (os.environ.get(key) or values.get(key) or "").strip()
+
+
+def discover_jira_standard_field_ids(job_utils_root: Path) -> Dict[str, object]:
+    """Discover Jira Summary and Description IDs without changing custom fields."""
+
+    root = Path(job_utils_root).expanduser().resolve()
+    env_path = root / ".env"
+    if not env_path.is_file():
+        return {"status": "skipped", "reason": "env_file_missing"}
+    values = _parse_env(env_path.read_text(encoding="utf-8").splitlines())
+    summary_current = values.get("JIRA_SUMMARY_FIELD", "").strip()
+    description_current = values.get("JIRA_DESCRIPTION_FIELD", "").strip()
+    if (
+        summary_current
+        and summary_current != "summary"
+        and description_current
+        and description_current != "description"
+    ):
+        return {"status": "already_configured"}
+
+    base_url = _configured_env_value(values, "JIRA_BASE_URL")
+    token = _configured_env_value(values, "JIRA_API_TOKEN")
+    if not base_url or not token:
+        return {"status": "skipped", "reason": "jira_credentials_missing"}
+    auth_type = (_configured_env_value(values, "JIRA_AUTH_TYPE") or "bearer").lower()
+    headers = {"Accept": "application/json"}
+    if auth_type == "bearer":
+        headers["Authorization"] = "Bearer " + token
+    elif auth_type == "basic":
+        email = _configured_env_value(values, "JIRA_EMAIL")
+        if not email:
+            return {"status": "skipped", "reason": "jira_email_missing"}
+        raw_auth = base64.b64encode((email + ":" + token).encode("utf-8")).decode(
+            "ascii"
+        )
+        headers["Authorization"] = "Basic " + raw_auth
+    else:
+        return {"status": "skipped", "reason": "unsupported_auth_type"}
+
+    endpoint = base_url.rstrip("/") + "/rest/api/2/field"
+    req = request.Request(endpoint, headers=headers, method="GET")
+    try:
+        with request.urlopen(req, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        return {"status": "skipped", "reason": "jira_http_error", "http_status": error.code}
+    except OSError:
+        return {"status": "skipped", "reason": "network_error"}
+    except (ValueError, TypeError):
+        return {"status": "skipped", "reason": "invalid_field_response"}
+
+    if isinstance(payload, list):
+        fields = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("values"), list):
+        fields = payload["values"]
+    else:
+        return {"status": "skipped", "reason": "invalid_field_response"}
+
+    matches = {}
+    for target_name in ("Summary", "Description"):
+        target = target_name.casefold()
+        matches[target_name] = sorted(
+            str(field["id"])
+            for field in fields
+            if isinstance(field, dict)
+            and isinstance(field.get("id"), str)
+            and str(field.get("name", "")).casefold() == target
+        )
+
+    ambiguous = {
+        name: ids for name, ids in matches.items() if len(ids) > 1
+    }
+    if ambiguous:
+        return {"status": "ambiguous", "matches": ambiguous}
+
+    updates = {}
+    if len(matches["Summary"]) == 1 and (
+        not summary_current or summary_current == "summary"
+    ):
+        updates["JIRA_SUMMARY_FIELD"] = matches["Summary"][0]
+    if len(matches["Description"]) == 1 and (
+        not description_current or description_current == "description"
+    ):
+        updates["JIRA_DESCRIPTION_FIELD"] = matches["Description"][0]
+    if not updates:
+        return {"status": "not_found"}
+
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    for key, value in updates.items():
+        _set_env_value(lines, key, value)
+    env_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    if os.name != "nt":
+        env_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    return {"status": "discovered", "fields": updates}
 
 
 def _replace_managed_block(
@@ -705,6 +808,12 @@ def run_setup(
     else:
         _record_step(state_path, "env", "skipped")
         steps["env"] = "skipped"
+    jira_field_discovery = _run_setup_step(
+        state_path,
+        "jira_field_discovery",
+        lambda: discover_jira_standard_field_ids(root),
+    )
+    steps["jira_field_discovery"] = jira_field_discovery
     user_bin = paths.user_bin
     wrapper_platform = "windows" if platform_name == "windows" else "posix"
     _run_setup_step(

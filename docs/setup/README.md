@@ -38,7 +38,9 @@ README already has the first commit. When there is no commit yet, the commit
 contains the current non-ignored repository contents; review the selected path
 before setup. Setup never pushes. If setup starts with existing local changes,
 it does not auto-commit them. Vim swap files (`*.swp` and `*.swo`) are ignored
-by the managed GTD `.gitignore` block.
+by the managed GTD `.gitignore` block. Normal Vim use stores new swap files
+outside the GTD repository: `~/.vim/swap` on macOS/Ubuntu and
+`%LOCALAPPDATA%/vim/swap` on Windows. Swap recovery remains enabled.
 
 If setup is interrupted, run the same platform script again. It reuses the
 virtual environment and fills only missing configuration or registration.
@@ -62,6 +64,13 @@ Validate the non-secret destination profile with:
 ```text
 jobutils config validate --path /absolute/path/to/config.yaml
 ```
+
+When Jira credentials are present, setup performs a read-only Jira field
+catalog lookup and fills the standard `JIRA_SUMMARY_FIELD` and
+`JIRA_DESCRIPTION_FIELD` values from the returned field IDs. It never guesses
+or overwrites `JIRA_PROGRESS_COMMENT_FIELD`, because that custom field is
+workspace-specific. If the lookup is unavailable, setup remains resumable and
+keeps the standard fallback values.
 
 ## Commands available from anywhere
 

@@ -16,7 +16,7 @@
 - `Progress Comment` remains an optional configured Jira field ID.
 - Front matter values override `.env` defaults; `.env` values never enter plans as credentials.
 - Markdown remains the canonical source and external IDs/state remain in the separate GTD Markdown Repository.
-- No external API call is required to discover the two standard Jira system field IDs.
+- Runtime operation has safe `summary` and `description` fallbacks; setup may confirm the IDs through Jira's read-only field catalog.
 - Existing task and synchronization behavior must remain compatible when the new fields are absent.
 
 ---

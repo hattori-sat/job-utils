@@ -3,6 +3,7 @@ import unittest
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import sys
 
@@ -12,6 +13,7 @@ from jobutils.setup_workflow import (
     SetupError,
     bootstrap_gtd_repository,
     detect_platform,
+    discover_jira_standard_field_ids,
     run_setup,
     validate_gtd_repository,
 )
@@ -34,6 +36,91 @@ class SetupWorkflowTests(unittest.TestCase):
     def test_unsupported_platform_is_rejected(self):
         with self.assertRaises(SetupError):
             detect_platform("FreeBSD")
+
+    def test_setup_discovers_jira_summary_and_description_field_ids(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return (
+                    b'[{"id":"summary","name":"Summary"},'
+                    b'{"id":"description","name":"Description"},'
+                    b'{"id":"customfield_12345","name":"Progress Comment"}]'
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            env_path = root / ".env"
+            env_path.write_text(
+                "JIRA_BASE_URL=https://example.invalid\n"
+                "JIRA_AUTH_TYPE=bearer\n"
+                "JIRA_API_TOKEN=secret-token\n"
+                "JIRA_SUMMARY_FIELD=summary\n"
+                "JIRA_DESCRIPTION_FIELD=description\n"
+                "JIRA_PROGRESS_COMMENT_FIELD=\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "jobutils.setup_workflow.request.urlopen",
+                return_value=Response(),
+            ):
+                result = discover_jira_standard_field_ids(root)
+
+            self.assertEqual(result["status"], "discovered")
+            values = env_path.read_text(encoding="utf-8")
+            self.assertIn("JIRA_SUMMARY_FIELD=summary", values)
+            self.assertIn("JIRA_DESCRIPTION_FIELD=description", values)
+            self.assertIn("JIRA_PROGRESS_COMMENT_FIELD=\n", values)
+
+    def test_setup_preserves_custom_jira_field_ids_and_progress_comment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            env_path = root / ".env"
+            env_path.write_text(
+                "JIRA_BASE_URL=https://example.invalid\n"
+                "JIRA_API_TOKEN=secret-token\n"
+                "JIRA_SUMMARY_FIELD=customfield_summary\n"
+                "JIRA_DESCRIPTION_FIELD=customfield_description\n"
+                "JIRA_PROGRESS_COMMENT_FIELD=customfield_progress\n",
+                encoding="utf-8",
+            )
+            with patch("jobutils.setup_workflow.request.urlopen") as open_request:
+                result = discover_jira_standard_field_ids(root)
+
+            self.assertEqual(result["status"], "already_configured")
+            open_request.assert_not_called()
+            values = env_path.read_text(encoding="utf-8")
+            self.assertIn("JIRA_SUMMARY_FIELD=customfield_summary", values)
+            self.assertIn("JIRA_DESCRIPTION_FIELD=customfield_description", values)
+            self.assertIn("JIRA_PROGRESS_COMMENT_FIELD=customfield_progress", values)
+
+    def test_setup_field_discovery_failure_is_resumable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            env_path = root / ".env"
+            env_path.write_text(
+                "JIRA_BASE_URL=https://example.invalid\n"
+                "JIRA_API_TOKEN=secret-token\n"
+                "JIRA_SUMMARY_FIELD=summary\n"
+                "JIRA_DESCRIPTION_FIELD=description\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "jobutils.setup_workflow.request.urlopen",
+                side_effect=OSError("network unavailable"),
+            ):
+                result = discover_jira_standard_field_ids(root)
+
+            self.assertEqual(result["status"], "skipped")
+            self.assertEqual(result["reason"], "network_error")
+            self.assertIn("JIRA_SUMMARY_FIELD=summary", env_path.read_text())
 
     def test_missing_or_non_git_repository_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

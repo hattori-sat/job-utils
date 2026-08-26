@@ -47,6 +47,11 @@ small local defaults:
   helpers.
 - `g:jobutils_enable_filetype_defaults = 0` disables the filetype/syntax layer;
   `g:jobutils_enable_defaults = 0` disables the display and editing defaults.
+- Swap files remain enabled for crash recovery, but the runtime places them in
+  a per-user directory outside the GTD repository: `~/.vim/swap` on macOS and
+  Ubuntu, or `%LOCALAPPDATA%/vim/swap` on Windows. The directory is created
+  when needed and uses Vim's double-slash filename encoding to avoid basename
+  collisions.
 
 The settings live in the job-utils runtime so setup can register them without
 rewriting the user's existing `.vimrc`.
