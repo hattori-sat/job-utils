@@ -84,6 +84,8 @@ GTD_GITIGNORE_BLOCK = "\n".join(
         "# >>> job-utils setup >>>",
         ".jobutils/output/",
         ".jobutils/sync/plans/",
+        "*.swp",
+        "*.swo",
         "# <<< job-utils setup <<<",
     ]
 )
@@ -238,6 +240,59 @@ def bootstrap_gtd_repository(path: Path) -> List[str]:
             directory.mkdir(parents=True, exist_ok=True)
             created.append(relative + "/")
     return created
+
+
+def _has_git_commit(path: Path) -> bool:
+    """Return whether a local Git repository has an initial commit."""
+
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--verify", "HEAD"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _git_worktree_status(path: Path) -> str:
+    """Return the selected repository's porcelain status."""
+
+    result = subprocess.run(
+        ["git", "-C", str(path), "status", "--porcelain"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SetupError(
+            "could not inspect the GTD repository: {}".format(
+                result.stderr.strip() or "git status failed"
+            )
+        )
+    return result.stdout
+
+
+def ensure_gtd_setup_commit(path: Path, status_before_setup: str) -> Dict[str, str]:
+    """Commit setup changes locally without absorbing pre-existing changes."""
+
+    path = validate_gtd_repository(path)
+    status_after_setup = _git_worktree_status(path)
+    if not status_after_setup.strip():
+        return {"status": "unchanged"}
+    if _has_git_commit(path) and status_before_setup.strip():
+        return {"status": "skipped_dirty"}
+
+    from .gitops import GitOperationError, commit
+
+    try:
+        result = commit(path, "chore: initialize GTD repository")
+    except GitOperationError as error:
+        raise SetupError(
+            "could not create the GTD setup commit: {}".format(error)
+        ) from error
+    return {"status": "created", "revision": result["revision"]}
 
 
 def _parse_env(lines: Iterable[str]) -> Dict[str, str]:
@@ -621,10 +676,21 @@ def run_setup(
     paths = SetupPaths(root, target, platform_name, home)
     state_path = paths.state_root / "state.json"
     steps = {}
+    status_before_setup = _git_worktree_status(target)
     _run_setup_step(state_path, "repository", lambda: None)
     steps["repository"] = "completed"
     _run_setup_step(state_path, "gtd_repository", lambda: bootstrap_gtd_repository(target))
     steps["gtd_repository"] = "completed"
+    setup_commit = _run_setup_step(
+        state_path,
+        "gtd_setup_commit",
+        lambda: ensure_gtd_setup_commit(target, status_before_setup),
+    )
+    steps["gtd_setup_commit"] = (
+        setup_commit.get("status", "completed")
+        if isinstance(setup_commit, dict)
+        else "completed"
+    )
     if not skip_env_prompt:
         _run_setup_step(
             state_path,

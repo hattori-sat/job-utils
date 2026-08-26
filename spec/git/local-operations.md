@@ -4,6 +4,12 @@ The GTD Markdown Repository remains the source repository for personal task
 and document data. Git operations are owned by the synchronization workflow in
 normal use.
 
+When setup starts with a clean GTD Repository, it creates one local setup
+commit for the bootstrap changes. This also covers a repository whose README
+already has the first commit. When there is no commit yet, the commit includes
+the current non-ignored repository contents. Setup never pushes and never
+absorbs pre-existing local changes into this commit.
+
 ## User-facing synchronization
 
 ```text
