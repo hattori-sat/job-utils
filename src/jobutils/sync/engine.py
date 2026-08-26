@@ -320,6 +320,21 @@ def _observation_is_mergeable(document, observed: Dict) -> bool:
     return not conflict
 
 
+def _effective_base_body(
+    document, kind: str, base: Optional[str], local_public_body: str
+) -> Optional[str]:
+    """Adapt a legacy Jira full-body base to the current projection body."""
+
+    if (
+        kind == "jira"
+        and isinstance(base, str)
+        and canonical_sync_body(base) == canonical_sync_body(document.public_body)
+        and canonical_sync_body(base) != canonical_sync_body(local_public_body)
+    ):
+        return local_public_body
+    return base
+
+
 def create_plan(
     repo_root: Path, observations: Optional[Dict[str, object]] = None
 ) -> Dict:
@@ -1246,6 +1261,7 @@ def check(
             )
             local_public_body = canonical_sync_body(_sync_body(document, kind))
             remote_public_body = canonical_sync_body(remote_body)
+            base = _effective_base_body(document, kind, base, local_public_body)
             state = classify_drift(base, local_public_body, remote_public_body)
             if kind == "jira":
                 summary_changed = remote.get("title") is not None and _jira_summary(

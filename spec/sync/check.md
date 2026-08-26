@@ -25,6 +25,12 @@ pushes.
 Items without a publish flag or external ID are not checked. Implementation
 Notes are excluded because comparisons use the parsed public body.
 
+For Jira task files created by older versions, the first check recognizes a
+legacy full-task base snapshot when it exactly matches the current public task
+body. It compares that snapshot using the current `# Description` projection,
+so an unchanged task is not reported as a false conflict after the description
+mapping change.
+
 ## Interfaces
 
 ```text

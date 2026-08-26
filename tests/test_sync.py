@@ -1306,6 +1306,34 @@ Local-only objective.
             "clean",
         )
 
+    def test_legacy_full_jira_base_does_not_create_false_conflict(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Task\n"
+            "publish_jira: true\njira_project: DEMO\njira_issue_type: Task\n"
+            "---\n\n# Summary\nTask\n\n# Description\n\nOriginal\n\n"
+            "# Objective\n\n\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        # Releases before the Jira description-only mapping stored the whole
+        # task body as the base snapshot. Reproduce that legacy state.
+        base_path = next((self.repo / ".jobutils" / "sync" / "bases").glob("*.md"))
+        base_path.write_text(
+            parse_document(str(path)).public_body, encoding="utf-8"
+        )
+        next(iter(adapter.records.values()))["payload"]["description"] = (
+            "Original\n\nChanged externally"
+        )
+
+        checked = check(self.repo, adapter, refresh_git=False)
+        plan = create_plan(self.repo)
+
+        self.assertEqual(checked["items"][0]["state"], "external_changed")
+        self.assertEqual(plan["actions"][0]["action"], "import")
+
     def test_sync_normalization_preserves_blank_lines_inside_code(self):
         body = "# Guide\n\n\n\n```cpp\nfirst\n\nsecond\n```\n"
         self.assertIn("first\n\nsecond", canonical_sync_body(body))
