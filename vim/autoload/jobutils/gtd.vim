@@ -430,7 +430,7 @@ function! jobutils#gtd#sync_plan() abort
   echo 'GTD: sync plan created; review the JSON plan before applying it'
 endfunction
 
-function! jobutils#gtd#sync_apply(plan) abort
+function! s:sync_apply_with_adapter(plan, adapter) abort
   let l:root = s:repo_root()
   if empty(l:root)
     echoerr 'GTD: gtd.md was not found from the current file'
@@ -447,7 +447,7 @@ function! jobutils#gtd#sync_apply(plan) abort
     return
   endif
   let l:result = s:run_cli(
-        \ 'sync apply --plan ' . shellescape(l:plan) . ' --adapter atlassian'
+        \ 'sync apply --plan ' . shellescape(l:plan) . ' --adapter ' . a:adapter
         \ )
   if !l:result.ok
     call s:show_error(l:result.output, 'GTD: sync apply failed')
@@ -455,6 +455,14 @@ function! jobutils#gtd#sync_apply(plan) abort
   endif
   call s:show_output(l:result.output)
   echo 'GTD: sync apply, commit, and push completed'
+endfunction
+
+function! jobutils#gtd#sync_apply(plan) abort
+  call s:sync_apply_with_adapter(a:plan, 'atlassian')
+endfunction
+
+function! jobutils#gtd#sync_apply_datacenter(plan) abort
+  call s:sync_apply_with_adapter(a:plan, 'confluence-datacenter')
 endfunction
 
 function! jobutils#gtd#sync_status() abort
@@ -530,6 +538,7 @@ function! jobutils#gtd#sync_help() abort
   echo ':GtdSyncUpdate            fast-forward the local Git repository'
   echo ':GtdSyncPlan              create a reviewable synchronization plan'
   echo ':GtdSyncApply [plan]      apply the newest or named plan after confirmation'
+  echo ':GtdSyncApplyDataCenter   upload Confluence documents to Data Center'
   echo ':GtdSyncStatus            show local plans, bases, pending actions, conflicts'
   echo ':GtdSyncRebind [path]     update a stored Jira/Confluence identity locally'
   echo ':GtdSyncCheck             refresh Git/Jira/Confluence and inspect drift'

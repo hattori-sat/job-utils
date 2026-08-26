@@ -880,6 +880,11 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 )
             )
         for observed in observed_by_path.values():
+            upload_only = getattr(adapter, "upload_only", False) or observed.get(
+                "kind"
+            ) in getattr(adapter, "upload_only_kinds", ())
+            if upload_only:
+                continue
             current_remote = adapter.fetch(
                 observed["kind"],
                 observed["external_id"],

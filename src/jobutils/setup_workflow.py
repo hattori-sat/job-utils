@@ -21,6 +21,7 @@ class SetupError(RuntimeError):
 
 
 SUPPORTED_PLATFORMS = ("macos", "ubuntu", "windows")
+CONFLUENCE_PLATFORMS = ("cloud", "datacenter")
 ENV_SPECS = (
     ("JIRA_BASE_URL", "Jira base URL", False, "https://your-domain.atlassian.net"),
     ("JIRA_AUTH_TYPE", "Jira authentication type (bearer or basic)", False, "bearer"),
@@ -47,6 +48,12 @@ ENV_SPECS = (
         "Jira Progress Comment format (text or adf)",
         False,
         "text",
+    ),
+    (
+        "CONFLUENCE_PLATFORM",
+        "Confluence platform (cloud or datacenter)",
+        False,
+        "cloud",
     ),
     (
         "CONFLUENCE_BASE_URL",
@@ -345,18 +352,38 @@ def ensure_env_file(
     source = env_path.read_text(encoding="utf-8") if env_path.is_file() else example.read_text(encoding="utf-8")
     lines = source.splitlines()
     values = _parse_env(lines)
+    initial_setup = not env_path.is_file()
     for key, label, secret, default in ENV_SPECS:
         current = values.get(key, "")
+        if key == "CONFLUENCE_PLATFORM" and current:
+            current = current.casefold()
+            if current not in CONFLUENCE_PLATFORMS:
+                raise SetupError(
+                    "CONFLUENCE_PLATFORM must be one of: {}".format(
+                        ", ".join(CONFLUENCE_PLATFORMS)
+                    )
+                )
+            if values.get(key) != current:
+                _set_env_value(lines, key, current)
+        force_initial_platform_prompt = key == "CONFLUENCE_PLATFORM" and initial_setup
         placeholder = current in ("", "YOUR_ATLASSIAN_EMAIL") or current.startswith(
             "https://your-domain"
         )
-        if not placeholder:
+        if not placeholder and not force_initial_platform_prompt:
             continue
         prompt = "{} [{}]: ".format(label, default) if default else "{}: ".format(label)
         answer = secret_input_fn(prompt) if secret else input_fn(prompt)
         answer = answer.strip()
         if not answer and default:
             answer = default
+        if key == "CONFLUENCE_PLATFORM":
+            answer = answer.casefold()
+            if answer not in CONFLUENCE_PLATFORMS:
+                raise SetupError(
+                    "CONFLUENCE_PLATFORM must be one of: {}".format(
+                        ", ".join(CONFLUENCE_PLATFORMS)
+                    )
+                )
         if answer:
             _set_env_value(lines, key, answer)
     env_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")

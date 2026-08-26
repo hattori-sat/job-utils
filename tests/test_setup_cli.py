@@ -14,7 +14,7 @@ class SetupCliTests(unittest.TestCase):
             job_utils = temp / "job-utils"
             job_utils.mkdir()
             (job_utils / ".env.example").write_text(
-                "JIRA_API_TOKEN=\n", encoding="utf-8"
+                "JIRA_API_TOKEN=\nCONFLUENCE_PLATFORM=cloud\n", encoding="utf-8"
             )
             gtd_repo = temp / "GTDMD"
             subprocess.run(["git", "init", str(gtd_repo)], check=True, stdout=subprocess.PIPE)
