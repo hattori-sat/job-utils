@@ -20,7 +20,6 @@ from jobutils.sync.engine import (
     check,
     classify_drift,
     create_plan,
-    pull,
     rebind,
     sync_status,
 )
@@ -138,7 +137,112 @@ Private content.
         ).strip()
         self.assertEqual(remote_revision, local_revision)
 
-    def test_cli_sync_apply_saves_dirty_worktree_before_external_apply(self):
+    def test_cli_sync_update_fast_forwards_and_returns_git_result(self):
+        repo = Path(self.tempdir.name) / "update-repo"
+        repo.mkdir()
+        remote = Path(self.tempdir.name) / "update-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "config", "user.email", "local-test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        (repo / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: seed update repository"], cwd=repo, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repo, check=True)
+
+        peer = Path(self.tempdir.name) / "update-peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True)
+        subprocess.run(["git", "config", "user.name", "Peer Test"], cwd=peer, check=True)
+        (peer / "remote.md").write_text("remote\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: add remote file"], cwd=peer, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["sync", "update", "--repo", str(repo)])
+
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertTrue(response["git"]["performed"])
+        self.assertTrue((repo / "remote.md").is_file())
+
+    def test_cli_sync_update_allows_an_empty_remote(self):
+        repo = Path(self.tempdir.name) / "empty-remote-repo"
+        repo.mkdir()
+        remote = Path(self.tempdir.name) / "empty-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "config", "user.email", "local-test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        (repo / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: seed empty remote repository"], cwd=repo, check=True)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["sync", "update", "--repo", str(repo)])
+
+        self.assertEqual(result, 0)
+        response = json.loads(output.getvalue())
+        self.assertEqual(response["git"]["state"], "no_remote")
+        self.assertTrue(response["git"]["skipped"])
+
+    def test_cli_sync_apply_rejects_remote_ahead_before_external_apply(self):
+        repo = Path(self.tempdir.name) / "stale-apply-repo"
+        repo.mkdir()
+        remote = Path(self.tempdir.name) / "stale-apply-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "config", "user.email", "local-test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        document = repo / "documents"
+        document.mkdir()
+        path = document / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: seed stale apply repository"], cwd=repo, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repo, check=True)
+        plan_path = Path(self.tempdir.name) / "stale-apply-plan.json"
+        plan_path.write_text(json.dumps(create_plan(repo)), encoding="utf-8")
+
+        peer = Path(self.tempdir.name) / "stale-apply-peer"
+        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+        subprocess.run(["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True)
+        subprocess.run(["git", "config", "user.name", "Peer Test"], cwd=peer, check=True)
+        (peer / "peer.md").write_text("peer\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+        subprocess.run(["git", "commit", "-qm", "test: advance remote before apply"], cwd=peer, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            result = main(
+                [
+                    "sync",
+                    "apply",
+                    "--repo",
+                    str(repo),
+                    "--plan",
+                    str(plan_path),
+                    "--adapter",
+                    "memory",
+                    "--git-sync",
+                ]
+            )
+
+        self.assertEqual(result, 1)
+        self.assertIn("remote_ahead", errors.getvalue())
+        self.assertNotIn("confluence_page_id:", path.read_text(encoding="utf-8"))
+
+    def test_cli_sync_apply_commits_dirty_worktree_once_after_external_apply(self):
         repo = Path(self.tempdir.name) / "repo"
         repo.mkdir()
         (repo / "documents").mkdir()
@@ -192,111 +296,21 @@ Private content.
 
         self.assertEqual(result, 0)
         response = json.loads(output.getvalue())
-        self.assertIsNotNone(response["git"]["pre_apply_commit"])
+        self.assertIsNotNone(response["git"]["commit"])
+        self.assertNotIn("pre_apply_commit", response["git"])
         self.assertTrue(response["git"]["push"]["performed"])
+        self.assertEqual(
+            subprocess.check_output(
+                ["git", "rev-list", "--count", "HEAD"], cwd=repo, text=True
+            ).strip(),
+            "2",
+        )
         self.assertEqual(
             subprocess.check_output(
                 ["git", "status", "--porcelain"], cwd=repo, text=True
             ),
             "",
         )
-
-    def test_cli_sync_pull_combines_git_pull_external_import_commit_and_push(self):
-        repo = Path(self.tempdir.name) / "repo"
-        repo.mkdir()
-        (repo / "documents").mkdir()
-        (repo / "gtd_tasks").mkdir()
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "local-test"], cwd=repo, check=True
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Job Utils Test"], cwd=repo, check=True
-        )
-        remote = Path(self.tempdir.name) / "remote.git"
-        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
-        subprocess.run(
-            ["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True
-        )
-        document = repo / "documents" / "guide.md"
-        document.write_text(
-            "---\n"
-            "gtd_id: doc-1\n"
-            "kind: document\n"
-            "title: Guide\n"
-            "publish_confluence: true\n"
-            "confluence_page_id: page-1\n"
-            "---\n\n"
-            "# Guide\n\nLocal content.\n",
-            encoding="utf-8",
-        )
-        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-        subprocess.run(
-            ["git", "commit", "-qm", "test: seed pull repository"],
-            cwd=repo,
-            check=True,
-        )
-        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repo, check=True)
-
-        peer = Path(self.tempdir.name) / "peer"
-        subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Peer Test"], cwd=peer, check=True
-        )
-        (peer / "from-github.md").write_text("from GitHub\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
-        subprocess.run(
-            ["git", "commit", "-qm", "test: add github change"], cwd=peer, check=True
-        )
-        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
-
-        adapter = MemoryAdapter()
-        adapter.records["page-1"] = {
-            "kind": "confluence",
-            "payload": {
-                "title": "Guide",
-                "storage_body": markdown_to_storage("# Guide\n\nRemote content.\n"),
-                "version": 1,
-            },
-            "url": "https://memory.invalid/confluence/page-1",
-        }
-        output = io.StringIO()
-        with patch("jobutils.cli.MemoryAdapter", return_value=adapter), contextlib.redirect_stdout(output):
-            result = main(
-                [
-                    "sync",
-                    "pull",
-                    "--repo",
-                    str(repo),
-                    "--adapter",
-                    "memory",
-                ]
-            )
-
-        self.assertEqual(result, 0)
-        response = json.loads(output.getvalue())
-        self.assertTrue(response["git"]["pull"]["performed"])
-        self.assertTrue(response["git"]["push"]["performed"])
-        self.assertTrue((repo / "from-github.md").is_file())
-        self.assertIn("Remote content.", document.read_text(encoding="utf-8"))
-        local_revision = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=repo, text=True
-        ).strip()
-        branch = response["git"]["push"]["branch"]
-        remote_revision = subprocess.check_output(
-            [
-                "git",
-                "--git-dir",
-                str(remote),
-                "rev-parse",
-                "refs/heads/{}".format(branch),
-            ],
-            text=True,
-        ).strip()
-        self.assertEqual(remote_revision, local_revision)
 
     def test_plan_skips_unmanaged_markdown_without_front_matter(self):
         (self.repo / "documents" / "notes.md").write_text(
@@ -403,7 +417,7 @@ Private content.
             any('"event_type": "sync_error"' in item.read_text() for item in events)
         )
 
-    def test_pull_imports_remote_title_and_progress_comment(self):
+    def test_apply_imports_remote_title_and_progress_comment(self):
         path = self.repo / "gtd_tasks" / "task.md"
         path.write_text(
             "---\ngtd_id: task-1\nkind: task\ntitle: Local\n"
@@ -417,9 +431,10 @@ Private content.
         record["payload"]["title"] = "Remote title"
         record["payload"]["progress_comment"] = "Remote progress"
 
-        result = pull(self.repo, adapter)
+        check(self.repo, adapter)
+        result = apply_plan(self.repo, create_plan(self.repo), adapter)
 
-        self.assertFalse(result[0]["conflict"])
+        self.assertEqual(result[0]["action"], "import")
         updated = path.read_text(encoding="utf-8")
         self.assertIn("title: 'Remote title'", updated)
         self.assertIn("# Progress Comment\n\nRemote progress", updated)
@@ -629,7 +644,7 @@ private-task-note
         self.assertEqual(jira_body["content"][0]["type"], "heading")
         self.assertEqual(jira_body["content"][1]["type"], "bulletList")
 
-    def test_pull_marks_two_sided_change_for_vim_resolution(self):
+    def test_apply_marks_two_sided_change_for_vim_resolution(self):
         path = self.repo / "documents" / "guide.md"
         path.write_text(
             """---
@@ -654,8 +669,10 @@ Base content.
         )
         record = next(iter(adapter.records.values()))
         record["payload"]["storage_body"] = "<h1>Guide</h1><p>Remote content.</p>"
-        result = pull(self.repo, adapter)
-        self.assertTrue(result[0]["conflict"])
+        check(self.repo, adapter)
+        plan = create_plan(self.repo)
+        with self.assertRaisesRegex(SyncError, "conflict"):
+            apply_plan(self.repo, plan, adapter)
         merged = path.read_text(encoding="utf-8")
         self.assertIn("<<<<<<< local", merged)
         self.assertIn(">>>>>>> external", merged)
@@ -1155,6 +1172,142 @@ Objective.
             base_files,
         )
 
+    def test_plan_turns_external_only_change_into_import_action(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote\n"
+        )
+
+        check_result = check(self.repo, adapter)
+        plan = create_plan(self.repo)
+
+        self.assertEqual(check_result["items"][0]["state"], "external_changed")
+        self.assertEqual(plan["observation_id"], check_result["observation_id"])
+        self.assertEqual(plan["actions"][0]["action"], "import")
+        self.assertEqual(plan["actions"][0]["external_id"], "MEM-1")
+
+    def test_plan_turns_two_sided_change_into_blocking_conflict(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote\n"
+        )
+        check(self.repo, adapter)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("# Guide\n\nBase", "# Guide\n\nLocal"),
+            encoding="utf-8",
+        )
+
+        plan = create_plan(self.repo)
+
+        self.assertEqual(plan["actions"][0]["action"], "conflict")
+        self.assertIn("local content changed", plan["actions"][0]["blocked_reason"])
+
+    def test_apply_imports_external_change_from_the_checked_observation(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote\n"
+        )
+        check(self.repo, adapter)
+        plan = create_plan(self.repo)
+
+        result = apply_plan(self.repo, plan, adapter)
+
+        self.assertEqual(result[0]["action"], "import")
+        self.assertIn("Remote", path.read_text(encoding="utf-8"))
+        self.assertNotIn("Base\n", path.read_text(encoding="utf-8"))
+
+    def test_plan_rejects_observation_with_remote_git_changes(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n---\n\n# Guide\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(SyncError, "Git repository is remote_ahead"):
+            create_plan(
+                self.repo,
+                {
+                    "observation_id": "observation-1",
+                    "git": {"state": "remote_ahead"},
+                    "items": [],
+                },
+            )
+
+    def test_apply_rejects_external_change_after_check_before_mutation(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote one\n"
+        )
+        check(self.repo, adapter)
+        plan = create_plan(self.repo)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote two\n"
+        )
+        before = path.read_text(encoding="utf-8")
+
+        with self.assertRaisesRegex(SyncError, "external record changed"):
+            apply_plan(self.repo, plan, adapter)
+
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+    def test_apply_rejects_conflict_action_before_mutating(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote\n"
+        )
+        check(self.repo, adapter)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("# Guide\n\nBase", "# Guide\n\nLocal"),
+            encoding="utf-8",
+        )
+        plan = create_plan(self.repo)
+        with self.assertRaisesRegex(SyncError, "conflict"):
+            apply_plan(self.repo, plan, adapter)
+
+        merged = path.read_text(encoding="utf-8")
+        self.assertIn("<<<<<<< local", merged)
+        self.assertIn(">>>>>>> external", merged)
+
     def test_check_isolates_fetch_errors_and_reports_missing_base(self):
         first = self.repo / "documents" / "first.md"
         second = self.repo / "documents" / "second.md"
@@ -1168,10 +1321,10 @@ Objective.
         )
 
         class FetchAdapter(MemoryAdapter):
-            def fetch(self, kind, external_id):
+            def fetch(self, kind, external_id, options=None):
                 if external_id == "MEM-2":
                     raise RuntimeError("remote unavailable")
-                return super().fetch(kind, external_id)
+                return super().fetch(kind, external_id, options)
 
         adapter = FetchAdapter()
         adapter.records["MEM-1"] = {
@@ -1191,6 +1344,65 @@ Objective.
         self.assertEqual(by_path["documents/first.md"]["state"], "unknown")
         self.assertEqual(by_path["documents/second.md"]["state"], "error")
         self.assertIn("remote unavailable", by_path["documents/second.md"]["error"])
+
+    def test_check_refreshes_git_and_saves_external_observation(self):
+        repository = self.repo / "refresh-repo"
+        repository.mkdir()
+        (repository / "documents").mkdir()
+        (repository / "gtd_tasks").mkdir()
+        subprocess.run(["git", "init", "-q", str(repository)], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "local-test"],
+            cwd=repository,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Job Utils Test"],
+            cwd=repository,
+            check=True,
+        )
+        remote = self.repo / "refresh-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=repository,
+            check=True,
+        )
+        document = repository / "documents" / "guide.md"
+        document.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_page_id: MEM-1\n---\n\n# Guide\n\nLocal\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "-A"], cwd=repository, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: seed refresh repository"],
+            cwd=repository,
+            check=True,
+        )
+        subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=repository, check=True)
+        adapter = MemoryAdapter()
+        adapter.records["MEM-1"] = {
+            "kind": "confluence",
+            "payload": {
+                "title": "Guide",
+                "storage_body": "<h1>Guide</h1><p>Remote</p>",
+            },
+            "url": "https://memory.invalid/confluence/MEM-1",
+        }
+        before = document.read_bytes()
+
+        result = check(repository, adapter, refresh_git=True)
+
+        self.assertEqual(result["git"]["remote"], "origin")
+        self.assertTrue(result["git"]["performed"])
+        self.assertEqual(result["items"][0]["state"], "unknown")
+        observation = repository / ".jobutils" / "sync" / "observations" / "latest.json"
+        self.assertTrue(observation.is_file())
+        saved = json.loads(observation.read_text(encoding="utf-8"))
+        self.assertEqual(saved["observation_id"], result["observation_id"])
+        self.assertEqual(saved["items"][0]["remote"]["title"], "Guide")
+        self.assertEqual(document.read_bytes(), before)
 
     def test_sync_check_cli_returns_json_and_error_status(self):
         path = self.repo / "documents" / "guide.md"

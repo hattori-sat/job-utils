@@ -463,9 +463,9 @@ class VimRuntimeTests(unittest.TestCase):
         repository = Path(__file__).parents[1]
         vim_runtime = repository / "vim"
         commands = (
+            "GtdSyncUpdate",
             "GtdSyncPlan",
             "GtdSyncApply",
-            "GtdSyncPull",
             "GtdSyncStatus",
             "GtdSyncRebind",
             "GtdSyncCheck",
@@ -480,9 +480,9 @@ class VimRuntimeTests(unittest.TestCase):
         alias_check = " || ".join(
             "g:jobutils_abbreviations !~# '{}'".format(alias)
             for alias in (
+                "gtdsyncupdate",
                 "gtdsyncplan",
                 "gtdsyncapply",
-                "gtdsyncpull",
                 "gtdsyncstatus",
                 "gtdsyncrebind",
                 "gtdsynccheck",
@@ -498,6 +498,8 @@ class VimRuntimeTests(unittest.TestCase):
             "+if {} | cquit 91 | endif".format(alias_check),
             "+if exists(':GtdStart') == 2 || exists(':GtdStop') == 2 || exists(':GtdGitPush') == 2 | cquit 92 | endif",
             "+if g:jobutils_abbreviations =~# 'gtdstart' || g:jobutils_abbreviations =~# 'gtdstop' || g:jobutils_abbreviations =~# 'gtdgitpush' | cquit 93 | endif",
+            "+if exists(':GtdSyncPull') == 2 | cquit 94 | endif",
+            "+if g:jobutils_abbreviations =~# 'gtdsyncpull' | cquit 95 | endif",
         ]
         result = subprocess.run(
             [
@@ -666,6 +668,7 @@ class VimRuntimeTests(unittest.TestCase):
                         "set rtp^={}".format(vim_runtime),
                         "source {}/plugin/jobutils_gtd.vim".format(vim_runtime),
                         "edit {}/gtd.md".format(root),
+                        "let g:jobutils_sync_confirm = 'Y'",
                         "GtdSyncCheck",
                         "call writefile([execute('messages')], '{}')".format(messages),
                         "qa!",
@@ -685,6 +688,58 @@ class VimRuntimeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertIn('"checked": 0', messages.read_text(encoding="utf-8"))
             self.assertEqual((root / "gtd.md").read_bytes(), before)
+
+    def test_sync_update_fast_forwards_from_vim(self):
+        vim = shutil.which("vim")
+        if vim is None:
+            self.skipTest("Vim is not installed")
+        repository = Path(__file__).parents[1]
+        vim_runtime = repository / "vim"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote = root / "remote.git"
+            work = root / "gtd"
+            peer = root / "peer"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+            subprocess.run(["git", "init", "-q", str(work)], check=True)
+            subprocess.run(["git", "config", "user.email", "local-test"], cwd=work, check=True)
+            subprocess.run(["git", "config", "user.name", "Job Utils Test"], cwd=work, check=True)
+            subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=work, check=True)
+            (work / "gtd.md").write_text("# GTD\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=work, check=True)
+            subprocess.run(["git", "commit", "-qm", "test: seed Vim update repository"], cwd=work, check=True)
+            subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=work, check=True)
+            subprocess.run(["git", "clone", "-q", str(remote), str(peer)], check=True)
+            subprocess.run(["git", "config", "user.email", "peer@example.invalid"], cwd=peer, check=True)
+            subprocess.run(["git", "config", "user.name", "Peer Test"], cwd=peer, check=True)
+            (peer / "remote.md").write_text("remote\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=peer, check=True)
+            subprocess.run(["git", "commit", "-qm", "test: add Vim update file"], cwd=peer, check=True)
+            subprocess.run(["git", "push", "-q", "origin", "HEAD"], cwd=peer, check=True)
+            commands = root / "update.vim"
+            commands.write_text(
+                "\n".join(
+                    [
+                        "set rtp^={}".format(vim_runtime),
+                        "source {}/plugin/jobutils_gtd.vim".format(vim_runtime),
+                        "let g:jobutils_python='{}'".format(sys.executable),
+                        "edit {}/gtd.md".format(work),
+                        "GtdSyncUpdate",
+                        "if !filereadable('{}/remote.md') | cquit 101 | endif".format(work),
+                        "qa!",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [vim, "-Nu", "NONE", "-i", "NONE", "-n", "-es", "-S", str(commands)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PYTHONPATH": str(repository / "src")},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_sync_rebind_refreshes_current_buffer_after_success(self):
         vim = shutil.which("vim")

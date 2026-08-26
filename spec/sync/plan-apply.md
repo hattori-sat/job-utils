@@ -7,13 +7,16 @@ Jira and Confluence are external projections with stored identifiers and URLs.
 
 ## Plan
 
-`sync plan` reads publishable task/document Markdown and writes a reviewable
-JSON plan containing:
+`sync plan` reads publishable task/document Markdown and the latest observation
+from `sync check`, then writes a reviewable JSON plan containing:
 
 - a plan UUID and creation time;
 - a hash of the publishable source files;
+- the observation ID used to classify external drift, when available;
 - one create/update action per external target;
-- the target kind, local path, external identity, and sanitized payload.
+- the target kind, local path, external identity, and sanitized payload;
+- import actions for external-only changes and blocking conflict actions for
+  two-sided changes.
 
 Plan generation does not call an external write endpoint.
 
@@ -26,25 +29,28 @@ credentials.
 The local `sync status` operation reports plan, base-snapshot, pending-action,
 and conflict counts from `.jobutils/` without contacting an external service.
 
-The read-only `sync check` operation fetches current external bodies and
-compares them with the local public body and the last synchronized base. It
-reports clean, local-only, external-only, converged, conflict, unknown, and
-per-item error states without modifying any file or external resource.
+The read-only `sync check` operation refreshes Git remote-tracking metadata
+without changing the worktree, fetches current external bodies, and compares them with the local public body
+and the last synchronized base. It records an ignored observation and reports
+clean, local-only, external-only, converged, conflict, unknown, and per-item
+error states without modifying Markdown or any external resource.
 
 ## Apply
 
-`sync apply` verifies the source hash before executing actions. A stale plan is
-rejected and must be regenerated. Applying a plan is idempotent when the
+`sync apply` verifies the source hash and current Git state before executing
+actions. A stale plan is rejected and must be regenerated. It also refetches
+the external records represented by the observation and stops if their public
+body changed after `sync check`. Applying a plan is idempotent when the
 external identity is already present. Successful application writes resolved
 non-secret routing defaults, external IDs, URLs, versions, and hashes back to
 front matter; credentials are never written.
 
-For the Atlassian adapter, `sync apply` also commits the generated Markdown
-and `.jobutils` synchronization state and performs a real Git push to the
-configured remote. If the worktree has pending changes, the command first
-commits them locally after the normal credential-path checks, then performs
-the external request. It stops with local commits preserved if the push fails.
-The `--no-git-sync` option is available for tests and controlled recovery.
+For the Atlassian adapter, `sync apply` commits the generated Markdown and
+`.jobutils` synchronization state once after all approved actions complete and
+then performs a real Git push to the configured remote. Pending local Markdown
+changes are included in that one final commit after the normal credential-path
+checks. It stops with the local commit preserved if the push fails. The
+`--no-git-sync` option is available for tests and controlled recovery.
 
 Confluence actions include a local `parent_path` when a child document has a
 parent Markdown file. Apply orders parent actions before children and passes a
@@ -63,30 +69,26 @@ HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
 Each successful action records `sync_applied` in the repository's append-only
 metric event log. An adapter failure records `sync_error` before apply stops.
 
-Classic Vim exposes the same workflow through `:GtdSyncPlan`,
-`:GtdSyncApply [plan]`, `:GtdSyncPull`, and `:GtdSyncStatus`. Apply and pull
+Classic Vim exposes the same workflow through `:GtdSyncUpdate`, `:GtdSyncCheck`,
+`:GtdSyncPlan`, `:GtdSyncApply [plan]`, and `:GtdSyncStatus`. Check and apply
 require interactive confirmation; omitting the apply path selects the newest
 local plan.
 
-## Pull and conflicts
+## Check, plan, and conflicts
 
-`sync pull` is the single inbound synchronization operation. It first runs a
-fast-forward-only Git pull from the configured remote. If the working tree is
-dirty or the branch has diverged, it stops before contacting Jira or
-Confluence. After Git succeeds, it reads external content and compares it with
-the last synchronized public Markdown body. If only one side changed, that
-side is accepted. If both local and external content changed, the public body
-receives standard conflict markers (`<<<<<<< local`, `=======`, `>>>>>>> external`)
-and the command reports a conflict without silently choosing a side. The local
-Implementation Note is preserved below the merged public body. Remote Jira
-title, issue type, parent key, and configured Progress Comment values are
-materialized in the Markdown representation after a clean pull.
+`sync check` refreshes both sides and records the latest observation. `sync
+plan` uses that observation together with the local Markdown and base snapshot.
+If only the external side changed, the plan contains an `import` action. If
+both sides changed, the plan contains a blocking `conflict` action. Applying a
+conflict plan writes standard conflict markers (`<<<<<<< local`, `=======`,
+`>>>>>>> external`) to the public body, preserves the local Implementation
+Note, records `sync_conflict`, and stops without writing Jira or Confluence.
+The user resolves the markers in Vim, runs `sync check` and `sync plan` again,
+and applies the reviewed plan.
 
-When the external import changes the working tree, `sync pull` commits the
-Markdown and synchronization events and pushes that commit to the configured
-Git remote. Pulls and conflicts are recorded as `sync_pulled` and
-`sync_conflict` events. Separate Git pull and push commands are not part of the
-normal user workflow.
+The launcher and `:GtdSyncUpdate` perform only fast-forward Git updates.
+`GtdSyncApply` owns the final commit and push; no separate push command is part
+of the normal user workflow.
 
 ## Rendering rules
 
@@ -96,7 +98,7 @@ normal user workflow.
   paragraphs, links, images, unordered/ordered lists, pipe tables, fenced code
   blocks, and explicit `:::confluence-macro name=...` directives.
 - The supported Confluence storage and Jira ADF subset is converted back to
-  canonical Markdown during pull.
+  canonical Markdown during an `import` action.
 - Implementation Notes are removed before either payload is created.
 - Local relative references are replaced by published external URLs when
   available; private Markdown paths are removed from external text.

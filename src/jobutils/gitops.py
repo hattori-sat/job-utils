@@ -1,4 +1,4 @@
-"""Explicit local Git helpers with no real remote push operation."""
+"""Explicit local Git helpers used by the synchronization workflow."""
 
 import os
 import re
@@ -43,6 +43,25 @@ def _run(repo_root: Path, arguments: List[str]) -> subprocess.CompletedProcess:
         stderr=subprocess.PIPE,
         check=False,
     )
+
+
+def _is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
+    """Return whether one revision is an ancestor of another."""
+
+    result = _run(repo_root, ["merge-base", "--is-ancestor", ancestor, descendant])
+    return result.returncode == 0
+
+
+def _revision_state(repo_root: Path, local: str, remote: str) -> str:
+    """Classify the local branch relative to its fetched remote branch."""
+
+    if local == remote:
+        return "in_sync"
+    if _is_ancestor(repo_root, local, remote):
+        return "remote_ahead"
+    if _is_ancestor(repo_root, remote, local):
+        return "local_ahead"
+    return "diverged"
 
 
 def status(repo_root: Path) -> str:
@@ -235,6 +254,67 @@ def pull(
         "remote": selected_remote,
         "branch": selected_branch,
         "revision": revision.stdout.strip(),
+        "output": _redact_git_output(
+            "\n".join(value for value in (result.stdout, result.stderr) if value)
+        ).strip(),
+    }
+
+
+def fetch(
+    repo_root: Path, remote: str = "origin", branch: str = ""
+) -> Dict[str, object]:
+    """Refresh remote-tracking data without merging or changing the worktree."""
+
+    repo_root = Path(repo_root).resolve()
+    selected_remote = _validate_git_argument(remote, "remote")
+    remote_result = _run(repo_root, ["remote", "get-url", selected_remote])
+    if remote_result.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                remote_result.stderr.strip() or "configured remote was not found"
+            )
+        )
+    current_branch = _run(repo_root, ["branch", "--show-current"])
+    if current_branch.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                current_branch.stderr.strip() or "could not determine branch"
+            )
+        )
+    selected_branch = _validate_git_argument(
+        branch or current_branch.stdout.strip(), "branch"
+    )
+    result = _run(repo_root, ["fetch", "--prune", selected_remote])
+    if result.returncode:
+        raise GitOperationError(
+            _redact_git_output(result.stderr.strip() or "git fetch failed")
+        )
+    remote_revision = _run(
+        repo_root,
+        ["rev-parse", "refs/remotes/{}/{}".format(selected_remote, selected_branch)],
+    )
+    local_revision = _run(repo_root, ["rev-parse", "HEAD"])
+    if local_revision.returncode:
+        raise GitOperationError(
+            _redact_git_output(
+                local_revision.stderr.strip() or "could not determine local revision"
+            )
+    )
+    local_revision_text = local_revision.stdout.strip()
+    remote_revision_text = (
+        remote_revision.stdout.strip() if remote_revision.returncode == 0 else None
+    )
+    return {
+        "performed": True,
+        "remote": selected_remote,
+        "branch": selected_branch,
+        "local_revision": local_revision_text,
+        "remote_revision": remote_revision_text,
+        "state": (
+            _revision_state(repo_root, local_revision_text, remote_revision_text)
+            if remote_revision_text
+            else "no_remote"
+        ),
         "output": _redact_git_output(
             "\n".join(value for value in (result.stdout, result.stderr) if value)
         ).strip(),

@@ -63,9 +63,10 @@ shown in the setup output.
 
 - `jobutils` runs the Python CLI using this checkout's virtual environment.
 - `jobutils-python` runs that same Python interpreter for manual work.
-- `jobutils-vim` starts Vim with the configured environment. With no file
-  argument, it opens the configured GTD repository's `gtd.md`; an explicit
-  file argument is passed through unchanged.
+- `jobutils-vim` updates the configured GTD repository with a fast-forward-only
+  Git update before starting Vim. With no file argument, it opens the
+  configured repository's `gtd.md`; an explicit file argument is passed
+  through unchanged. A dirty or diverged repository stops before Vim opens.
 - `jobutils-activate` is an optional helper for manual Python commands.
 
 The wrappers use absolute paths, so the CLI and Vim do not depend on the
@@ -117,12 +118,12 @@ Available commands include:
 - `:GtdImpactLevels` — show impact levels;
 - `:GtdReview` — show the current-year metrics summary;
 - `:GtdMetricsHelp` — show metrics commands;
-- `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan;
+- `:GtdSyncUpdate` / `:gtdsyncupdate` — fast-forward the GTD Git repository for manual recovery;
+- `:GtdSyncCheck` — confirm a Git/Jira/Confluence refresh and inspect drift;
+- `:GtdSyncPlan` — create a reviewable Jira/Confluence synchronization plan from the latest check;
 - `:GtdSyncApply [plan]` — apply the newest or named plan, commit local sync state, and push after confirmation;
-- `:GtdSyncPull` — synchronize the Markdown repository with GitHub and then pull external changes after confirmation;
 - `:GtdSyncStatus` — show local plans, bases, pending actions, and conflicts;
 - `:GtdSyncRebind [path]` — update a stored Jira/Confluence identity locally;
-- `:GtdSyncCheck` — inspect external drift without changing files;
 - `:GtdSyncHelp` — show synchronization commands;
 - `:GtdFormat` / `:gtdformat` — normalize a saved Markdown buffer while preserving fenced code and front matter;
 - `:PasteImage [alt text]` / `:pasteimage` — save a clipboard PNG under `assets/` and insert its Markdown link;
@@ -173,33 +174,31 @@ jobutils metrics report --repo /absolute/path/to/your-gtd-repository --from 2026
 jobutils markdown paste-image --repo /absolute/path/to/your-gtd-repository --file documents/guide.md --name diagram
 jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md
 jobutils markdown format --path /absolute/path/to/your-gtd-repository/documents/guide.md --check
+jobutils sync update --repo /absolute/path/to/your-gtd-repository
+jobutils sync check --repo /absolute/path/to/your-gtd-repository --adapter atlassian
 jobutils sync plan --repo /absolute/path/to/your-gtd-repository
-jobutils sync pull --repo /absolute/path/to/your-gtd-repository --adapter atlassian
 jobutils sync status --repo /absolute/path/to/your-gtd-repository
 ```
 
 Reports derive active, waiting, and scheduled time from the GTD state
 transitions recorded by `:Gtd`.
 
-Synchronization has an explicit review step followed by one confirmed apply.
-`sync plan` reads publishable Markdown and writes a JSON plan under
-`.jobutils/sync/plans/`. Review that file, then use `:GtdSyncApply` or
-`jobutils sync apply --plan PATH --adapter atlassian`. The apply operation uses
-the newest plan when no path is supplied, asks for confirmation before writing
-to Jira or Confluence, automatically saves pending local changes, commits the
-resulting local synchronization metadata, and pushes the commits to the
-configured Git remote. `:GtdSyncPull` first
-fast-forwards the local Markdown repository from GitHub, then imports Jira and
-Confluence changes, commits any resulting local changes, and pushes them. A
-failure preserves the local state so the same synchronization operation can
-be retried after the cause is resolved.
+Synchronization follows an explicit check → plan → apply flow. `sync check`
+refreshes Git remote-tracking data and Jira/Confluence records after
+confirmation, and writes an ignored observation without committing or pushing.
+`sync plan` reads that observation and publishable Markdown and writes a JSON
+plan under `.jobutils/sync/plans/`. Review the plan, then use `:GtdSyncApply`
+or `jobutils sync apply --plan PATH --adapter atlassian`. Apply imports
+external-only changes, writes conflict markers for two-sided changes, applies
+publish actions, commits once after all actions, and pushes that one commit. A
+failure preserves local state so the same check → plan → apply sequence can be
+retried after the cause is resolved.
 
 Use `jobutils sync check --repo /absolute/path/to/your-gtd-repository
 --adapter atlassian` or `:GtdSyncCheck` before planning when you want to see
-whether Jira or Confluence changed outside the Markdown workflow. The check is
-read-only. It reports clean, local-only, external-only, converged, conflict,
-unknown, and per-item error states; use `:GtdSyncPull` only after reviewing
-those results.
+whether GitHub, Jira, or Confluence changed outside the Markdown workflow. It
+reports clean, local-only, external-only, converged, conflict, unknown, and
+per-item error states. The latest observation feeds the next plan.
 
 If an external Jira issue key or Confluence page ID changes, use the local
 rebind command before creating a new plan:

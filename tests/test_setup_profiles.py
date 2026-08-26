@@ -136,6 +136,10 @@ class SetupProfileTests(unittest.TestCase):
                 encoding="utf-8",
             )
             fake_vim.chmod(0o755)
+            fake_python = root / ".venv" / "bin" / "python"
+            fake_python.parent.mkdir(parents=True)
+            fake_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_python.chmod(0o755)
             wrapper = install_user_wrappers(
                 root, root / "bin", "posix", gtd_repo
             )["jobutils-vim"]

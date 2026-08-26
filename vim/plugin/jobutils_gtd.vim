@@ -14,9 +14,9 @@ command! GtdMetricsHelp call jobutils#gtd#metrics_help()
 command! GtdTaskHelp call jobutils#gtd#task_help()
 command! GtdDocHelp call jobutils#gtd#doc_help()
 command! GtdReview call jobutils#gtd#review()
+command! GtdSyncUpdate call jobutils#gtd#sync_update()
 command! GtdSyncPlan call jobutils#gtd#sync_plan()
 command! -nargs=? GtdSyncApply call jobutils#gtd#sync_apply(<q-args>)
-command! GtdSyncPull call jobutils#gtd#sync_pull()
 command! GtdSyncStatus call jobutils#gtd#sync_status()
 command! -nargs=? GtdSyncRebind call jobutils#gtd#sync_rebind(<q-args>)
 command! GtdSyncCheck call jobutils#gtd#sync_check()
@@ -50,12 +50,12 @@ cnoreabbrev <expr> gtddochelp
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtddochelp' ? 'GtdDocHelp' : 'gtddochelp'
 cnoreabbrev <expr> gtdreview
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdreview' ? 'GtdReview' : 'gtdreview'
+cnoreabbrev <expr> gtdsyncupdate
+      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncupdate' ? 'GtdSyncUpdate' : 'gtdsyncupdate'
 cnoreabbrev <expr> gtdsyncplan
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncplan' ? 'GtdSyncPlan' : 'gtdsyncplan'
 cnoreabbrev <expr> gtdsyncapply
       \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdsyncapply\%([[:space:]]\|$\)' ? 'GtdSyncApply' : 'gtdsyncapply'
-cnoreabbrev <expr> gtdsyncpull
-      \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncpull' ? 'GtdSyncPull' : 'gtdsyncpull'
 cnoreabbrev <expr> gtdsyncstatus
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncstatus' ? 'GtdSyncStatus' : 'gtdsyncstatus'
 cnoreabbrev <expr> gtdsyncrebind

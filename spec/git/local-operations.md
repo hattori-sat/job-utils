@@ -7,22 +7,31 @@ normal use.
 ## User-facing synchronization
 
 ```text
+jobutils sync update --repo REPOSITORY
 jobutils sync apply --repo REPOSITORY --plan PLAN --adapter atlassian
-jobutils sync pull --repo REPOSITORY --adapter atlassian
+jobutils sync check --repo REPOSITORY --adapter atlassian
+jobutils sync plan --repo REPOSITORY
 ```
 
-`sync apply` automatically commits pending local changes after the normal
-credential-path checks, performs the external Jira/Confluence apply, commits
-the resulting Markdown and `.jobutils` synchronization state, and pushes the
-commits.
+`sync update` performs a clean-worktree, fast-forward-only update from the
+configured Git remote. It never contacts Jira or Confluence. The Vim launcher
+runs it before opening the configured GTD repository; `:GtdSyncUpdate` is the
+manual recovery entry point.
 
-`sync pull` fast-forwards the local branch first, imports external changes,
-then commits and pushes any resulting local changes. A dirty worktree or a
-non-fast-forward branch stops the operation before external requests.
+`sync check` refreshes Git remote-tracking data and current Jira/Confluence
+records, then writes an ignored observation. It never pulls, commits, or
+pushes. The observation records whether Git is `in_sync`, `remote_ahead`,
+`local_ahead`, `diverged`, or `no_remote`; `remote_ahead` and `diverged` block
+planning until `sync update` succeeds.
+
+`sync plan` turns the observation into publish, import, or conflict actions.
+`sync apply` automatically commits pending local changes together with the
+resulting Markdown and `.jobutils` synchronization state after all actions
+complete, then pushes the one clean commit.
 
 ## Internal boundary
 
-The Python `gitops` module retains direct `commit`, `pull`, `push`, and
+The Python `gitops` module retains direct `commit`, `fetch`, `pull`, `push`, and
 `push_mock` functions for tests and controlled recovery. They use Git without a
 shell, delegate authentication to Git, reject credential-shaped files before a
 commit, never force-push, and redact credential-shaped URLs from errors. These
