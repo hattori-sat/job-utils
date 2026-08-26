@@ -44,6 +44,12 @@ available classifications and current metrics.
 Only files whose front matter enables `publish_jira: true` or
 `publish_confluence: true` are included in synchronization.
 
+Jira uses REST API v2 with Bearer authentication by default. If an external
+request fails, the error identifies the service and endpoint path without
+printing the token. A 401 usually indicates an authentication mismatch; a 403
+usually indicates the authenticated account lacks the required project or
+space permission.
+
 1. Save the Markdown file.
 2. Run `:GtdSyncCheck` and confirm the refresh prompt.
 3. Run `:GtdSyncPlan` and review the generated plan summary.

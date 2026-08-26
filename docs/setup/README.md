@@ -77,6 +77,11 @@ shown in the setup output.
   through unchanged. A dirty or diverged repository stops before Vim opens.
 - `jobutils-activate` is an optional helper for manual Python commands.
 
+Atlassian synchronization uses Bearer tokens by default. The setup file
+contains `JIRA_AUTH_TYPE` and `CONFLUENCE_AUTH_TYPE`; set either to `basic` only
+when using an email plus Basic API token. Jira issue synchronization uses REST
+API v2.
+
 The wrappers use absolute paths, so the CLI and Vim do not depend on the
 current directory or on a manually activated virtual environment.
 

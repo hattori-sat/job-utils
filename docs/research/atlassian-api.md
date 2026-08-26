@@ -5,11 +5,12 @@ keeps authentication outside the repositories.
 
 ## Jira Cloud
 
-The Jira Cloud REST API v3 issue resource supports creating and editing issues
-and subtasks. Jira descriptions and multi-line text fields use Atlassian
-Document Format (ADF), while single-line text custom fields use strings.
+The synchronization adapter uses the Jira Cloud REST API v2 issue resource for
+creating, editing, and reading issues and subtasks. Jira v2 accepts issue
+descriptions as Jira wiki text. The v3 API remains distinct because it uses
+Atlassian Document Format (ADF) for issue descriptions.
 
-Source: [Jira Cloud REST API v3 — Issues](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/)
+Source: [Jira Cloud REST API v2 — Issues](https://developer.atlassian.com/cloud/jira/platform/rest/v2/api-group-issues/)
 
 ## Confluence Cloud
 
