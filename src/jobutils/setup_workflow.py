@@ -20,6 +20,7 @@ class SetupError(RuntimeError):
 SUPPORTED_PLATFORMS = ("macos", "ubuntu", "windows")
 ENV_SPECS = (
     ("JIRA_BASE_URL", "Jira base URL", False, "https://your-domain.atlassian.net"),
+    ("JIRA_AUTH_TYPE", "Jira authentication type (bearer or basic)", False, "bearer"),
     ("JIRA_EMAIL", "Jira account email", False, ""),
     ("JIRA_API_TOKEN", "Jira API token", True, ""),
     ("JIRA_PROJECT", "Jira project key", False, ""),
@@ -41,6 +42,12 @@ ENV_SPECS = (
         "Confluence base URL",
         False,
         "https://your-domain.atlassian.net",
+    ),
+    (
+        "CONFLUENCE_AUTH_TYPE",
+        "Confluence authentication type (bearer or basic)",
+        False,
+        "bearer",
     ),
     ("CONFLUENCE_EMAIL", "Confluence account email", False, ""),
     ("CONFLUENCE_API_TOKEN", "Confluence API token", True, ""),

@@ -8,15 +8,17 @@ values in Markdown front matter, metric events, setup logs, or reports.
 | Variable | Meaning |
 | --- | --- |
 | `JIRA_BASE_URL` | Atlassian base URL, for example `https://example.atlassian.net`. |
-| `JIRA_EMAIL` | Atlassian account email used for API authentication. |
-| `JIRA_API_TOKEN` | Jira API token. Keep it secret. |
+| `JIRA_AUTH_TYPE` | `bearer` (default) or `basic`; selects the Jira Authorization header. |
+| `JIRA_EMAIL` | Atlassian account email used only when `JIRA_AUTH_TYPE=basic`. |
+| `JIRA_API_TOKEN` | Jira Bearer token by default, or Basic API token when `JIRA_AUTH_TYPE=basic`. Keep it secret. |
 | `JIRA_PROJECT` | Default Jira project key for the local workspace. |
 | `JIRA_ISSUE_TYPE` | Default issue type, normally `Task` or `Story`. |
 | `JIRA_PROGRESS_COMMENT_FIELD` | Optional Jira custom-field ID for Progress Comment. |
 | `JIRA_PROGRESS_COMMENT_FORMAT` | `text` for a text field or `adf` for an Atlassian document field. |
 | `CONFLUENCE_BASE_URL` | Atlassian base URL for Confluence. |
-| `CONFLUENCE_EMAIL` | Atlassian account email used for API authentication. |
-| `CONFLUENCE_API_TOKEN` | Confluence API token. Keep it secret. |
+| `CONFLUENCE_AUTH_TYPE` | `bearer` (default) or `basic`; selects the Confluence Authorization header. |
+| `CONFLUENCE_EMAIL` | Atlassian account email used only when `CONFLUENCE_AUTH_TYPE=basic`. |
+| `CONFLUENCE_API_TOKEN` | Confluence Bearer token by default, or Basic API token when `CONFLUENCE_AUTH_TYPE=basic`. Keep it secret. |
 | `CONFLUENCE_SPACE_ID` | Default Confluence space ID. |
 | `CONFLUENCE_SPACE_KEY` | Default Confluence space key for the local workspace. |
 | `CONFLUENCE_PARENT_ID` | Default parent page ID for new document pages. |
@@ -29,3 +31,6 @@ shell or use `jobutils-activate`; never commit the file.
 Non-secret project, space, and parent defaults can be overridden by Markdown
 front matter. Tokens are never copied into front matter or synchronization
 plans.
+
+Jira synchronization uses REST API v2 and sends Bearer authentication by
+default. Jira v2 receives wiki-text descriptions rather than Jira v3 ADF.

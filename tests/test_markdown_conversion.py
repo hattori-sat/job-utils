@@ -6,13 +6,41 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from jobutils.markdown.normalize import (
     adf_to_markdown,
+    jira_wiki_to_markdown,
     markdown_to_adf,
+    markdown_to_jira_wiki,
     markdown_to_storage,
     storage_to_markdown,
 )
 
 
 class MarkdownConversionTests(unittest.TestCase):
+    def test_markdown_to_jira_wiki_and_back(self):
+        source = """# Guide
+
+Visible [reference](https://example.com/reference).
+
+- one
+- two
+
+```python
+print('ok')
+```
+"""
+
+        wiki = markdown_to_jira_wiki(source)
+
+        self.assertIn("h1. Guide", wiki)
+        self.assertIn("[reference|https://example.com/reference]", wiki)
+        self.assertIn("* one", wiki)
+        self.assertIn("{code:python}", wiki)
+        self.assertIn("print('ok')", wiki)
+        self.assertEqual(
+            jira_wiki_to_markdown(wiki),
+            "# Guide\n\nVisible [reference](https://example.com/reference).\n\n"
+            "- one\n- two\n\n```python\nprint('ok')\n```\n",
+        )
+
     def test_markdown_to_storage_renders_supported_blocks_and_inline_content(self):
         rendered = markdown_to_storage(
             """# Guide

@@ -632,8 +632,8 @@ private-task-note
         plan = create_plan(self.repo)
         by_kind = {action["kind"]: action["payload"] for action in plan["actions"]}
         confluence_body = by_kind["confluence"]["storage_body"]
-        jira_body = by_kind["jira"]["description_adf"]
-        serialized_jira = json.dumps(jira_body, sort_keys=True)
+        jira_body = by_kind["jira"]["description"]
+        serialized_jira = jira_body
         for value in (confluence_body, serialized_jira):
             self.assertNotIn("private-token", value)
             self.assertNotIn("private-task-note", value)
@@ -641,8 +641,8 @@ private-task-note
         self.assertIn("https://example.com/public", confluence_body)
         self.assertIn("https://example.com/public", serialized_jira)
         self.assertIn("<th>Name</th>", confluence_body)
-        self.assertEqual(jira_body["content"][0]["type"], "heading")
-        self.assertEqual(jira_body["content"][1]["type"], "bulletList")
+        self.assertIn("h1. Summary", jira_body)
+        self.assertIn("* one", jira_body)
 
     def test_apply_marks_two_sided_change_for_vim_resolution(self):
         path = self.repo / "documents" / "guide.md"
