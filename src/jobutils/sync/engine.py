@@ -236,12 +236,16 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
         ),
     )
     if kind == "jira":
+        assign_to_self = document.metadata.get("jira_assign_to_self")
+        if assign_to_self is None:
+            assign_to_self = defaults["jira_assign_to_self"]
         return {
             "gtd_id": document.metadata.get("gtd_id"),
             "title": document.metadata.get("title") or path.stem,
             "description": markdown_to_jira_wiki(body),
             "project": document.metadata.get("jira_project") or defaults["jira_project"],
             "issue_type": document.metadata.get("jira_issue_type") or defaults["jira_issue_type"],
+            "assign_to_self": _bool(assign_to_self),
             "summary_field": document.metadata.get("jira_summary_field")
             or defaults["jira_summary_field"],
             "description_field": document.metadata.get("jira_description_field")
