@@ -218,7 +218,23 @@ class AtlassianHttpAdapter(SyncAdapter):
         try:
             with request.urlopen(req, timeout=30) as response:
                 raw = response.read().decode("utf-8")
-                return json.loads(raw) if raw else {}
+                if not raw.strip():
+                    return {}
+                try:
+                    payload = json.loads(raw)
+                except ValueError as error:
+                    raise RuntimeError(
+                        "{} {} {}: invalid JSON response".format(
+                            service, method, path
+                        )
+                    ) from error
+                if not isinstance(payload, dict):
+                    raise RuntimeError(
+                        "{} {} {}: JSON response was not an object".format(
+                            service, method, path
+                        )
+                    )
+                return payload
         except HTTPError as error:
             try:
                 detail = error.read().decode("utf-8", errors="replace")

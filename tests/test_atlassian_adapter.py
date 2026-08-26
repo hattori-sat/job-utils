@@ -13,6 +13,9 @@ from jobutils.sync.adapters import AtlassianHttpAdapter
 
 
 class _Response:
+    def __init__(self, body=b'{"ok": true}'):
+        self.body = body
+
     def __enter__(self):
         return self
 
@@ -20,7 +23,7 @@ class _Response:
         return False
 
     def read(self):
-        return b'{"ok": true}'
+        return self.body
 
 
 class AtlassianAdapterTests(unittest.TestCase):
@@ -79,6 +82,27 @@ class AtlassianAdapterTests(unittest.TestCase):
                 )
 
         self.assertIsNone(captured["request"].data)
+
+    def test_whitespace_only_response_is_treated_as_empty_json(self):
+        with patch.dict(
+            os.environ, {"CONFLUENCE_API_TOKEN": "bearer-token"}, clear=True
+        ):
+            with patch(
+                "jobutils.sync.adapters.request.urlopen",
+                return_value=_Response(b"\n  \n"),
+            ):
+                result = self.adapter._request(
+                    "https://example.atlassian.net",
+                    "/wiki/api/v2/pages",
+                    "CONFLUENCE_EMAIL",
+                    "CONFLUENCE_API_TOKEN",
+                    "GET",
+                    {},
+                    auth_type_key="CONFLUENCE_AUTH_TYPE",
+                    service="confluence",
+                )
+
+        self.assertEqual(result, {})
 
     def test_basic_auth_remains_available_when_selected(self):
         captured = {}

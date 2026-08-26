@@ -667,6 +667,8 @@ jira_project: DEMO
 - one
 - two
 
+# Description
+
 [Public task reference](https://example.com/public)
 
 # Implementation Note
@@ -687,8 +689,9 @@ private-task-note
         self.assertIn("https://example.com/public", confluence_body)
         self.assertIn("https://example.com/public", serialized_jira)
         self.assertIn("<th>Name</th>", confluence_body)
-        self.assertIn("h1. Summary", jira_body)
-        self.assertIn("* one", jira_body)
+        self.assertNotIn("h1. Summary", jira_body)
+        self.assertNotIn("* one", jira_body)
+        self.assertIn("[Public task reference|https://example.com/public]", jira_body)
 
     def test_apply_marks_two_sided_change_for_vim_resolution(self):
         path = self.repo / "documents" / "guide.md"
@@ -823,6 +826,77 @@ Objective.
         payload = plan["actions"][0]["payload"]
         self.assertEqual(payload["progress_comment_field"], "customfield_12345")
         self.assertIn("2026-08-23", payload["progress_comment"])
+
+    def test_jira_description_uses_only_description_section(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task title'
+publish_jira: 'true'
+jira_project: 'JOB'
+---
+
+# Summary
+
+Jira summary comes from this Markdown section.
+
+# Description
+
+Only this description is sent to Jira.
+
+# Progress Comment
+
+2026-08-23: progress must use its own field.
+
+# Objective
+
+Objective must not be sent as the Jira description.
+""",
+            encoding="utf-8",
+        )
+
+        payload = create_plan(self.repo)["actions"][0]["payload"]
+
+        self.assertIn("Only this description is sent to Jira.", payload["description"])
+        self.assertEqual(payload["title"], "Jira summary comes from this Markdown section.")
+        self.assertNotIn("Jira summary comes from", payload["description"])
+        self.assertNotIn("progress must use its own field", payload["description"])
+        self.assertNotIn("Objective must not be sent", payload["description"])
+
+    def test_jira_check_compares_only_description_section(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task title'
+publish_jira: 'true'
+jira_project: 'JOB'
+---
+
+# Summary
+
+Jira summary.
+
+# Description
+
+Jira description.
+
+# Objective
+
+Local-only objective.
+""",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        observation = check(self.repo, adapter)
+
+        self.assertEqual(observation["items"][0]["state"], "clean")
 
     def test_sync_payload_uses_environment_defaults_for_missing_front_matter(self):
         jira = self.repo / "gtd_tasks" / "task.md"
