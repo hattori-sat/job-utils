@@ -123,6 +123,8 @@ class AtlassianAdapterTests(unittest.TestCase):
             "title": "Task",
             "issue_type": "Task",
             "description": "h1. Task\n\nDetails\n",
+            "summary_field": "customfield_summary",
+            "description_field": "customfield_description",
         }
         with patch.object(
             self.adapter,
@@ -134,8 +136,37 @@ class AtlassianAdapterTests(unittest.TestCase):
         self.assertEqual(result["key"], "DEMO-1")
         args, kwargs = request_mock.call_args
         self.assertEqual(args[1], "/rest/api/2/issue")
-        self.assertEqual(args[5]["fields"]["description"], payload["description"])
+        self.assertEqual(
+            args[5]["fields"]["customfield_summary"], payload["title"]
+        )
+        self.assertEqual(
+            args[5]["fields"]["customfield_description"], payload["description"]
+        )
         self.assertEqual(kwargs["auth_type_key"], "JIRA_AUTH_TYPE")
+
+    def test_jira_fetch_reads_configured_summary_and_description_fields(self):
+        with patch.object(
+            self.adapter,
+            "_request",
+            return_value={
+                "fields": {
+                    "customfield_summary": "Remote title",
+                    "customfield_description": "h1. Remote body\n",
+                }
+            },
+        ) as request_mock:
+            result = self.adapter.fetch(
+                "jira",
+                "DEMO-1",
+                {
+                    "summary_field": "customfield_summary",
+                    "description_field": "customfield_description",
+                },
+            )
+
+        self.assertEqual(result["title"], "Remote title")
+        self.assertIn("# Remote body", result["body_markdown"])
+        self.assertEqual(request_mock.call_args.args[1], "/rest/api/2/issue/DEMO-1")
 
     def test_confluence_create_keeps_v2_endpoint_and_uses_service_auth(self):
         payload = {

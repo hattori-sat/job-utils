@@ -242,6 +242,10 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
             "description": markdown_to_jira_wiki(body),
             "project": document.metadata.get("jira_project") or defaults["jira_project"],
             "issue_type": document.metadata.get("jira_issue_type") or defaults["jira_issue_type"],
+            "summary_field": document.metadata.get("jira_summary_field")
+            or defaults["jira_summary_field"],
+            "description_field": document.metadata.get("jira_description_field")
+            or defaults["jira_description_field"],
             "parent_key": document.metadata.get("jira_parent_key"),
             "jira_key": document.metadata.get("jira_key"),
             "jira_url": document.metadata.get("jira_url"),
@@ -672,6 +676,16 @@ def _set_external(
             )
             frontmatter.set_value(
                 lines,
+                "jira_summary_field",
+                payload.get("summary_field") or "summary",
+            )
+            frontmatter.set_value(
+                lines,
+                "jira_description_field",
+                payload.get("description_field") or "description",
+            )
+            frontmatter.set_value(
+                lines,
                 "jira_progress_comment_field",
                 payload.get("progress_comment_field") or "",
             )
@@ -1073,6 +1087,7 @@ def check(
     else:
         git_result = {"performed": False, "skipped": True}
     observation_id = str(uuid.uuid4())
+    sync_defaults = load_sync_defaults()
     git_state = git_result.get("state")
     if git_state in ("remote_ahead", "diverged"):
         error_count += 1
@@ -1106,6 +1121,12 @@ def check(
                     "progress_comment_field": document.metadata.get(
                         "jira_progress_comment_field"
                     ),
+                    "summary_field": document.metadata.get("jira_summary_field")
+                    or sync_defaults["jira_summary_field"],
+                    "description_field": document.metadata.get(
+                        "jira_description_field"
+                    )
+                    or sync_defaults["jira_description_field"],
                     "progress_comment_format": document.metadata.get(
                         "jira_progress_comment_format"
                     )

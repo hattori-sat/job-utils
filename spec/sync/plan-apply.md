@@ -21,10 +21,17 @@ from `sync check`, then writes a reviewable JSON plan containing:
 Plan generation does not call an external write endpoint.
 
 When a Markdown value is empty, the plan builder uses the non-secret defaults
-loaded from the local environment: Jira project, issue type, and progress
-comment field, plus Confluence space and default parent page. Explicit front
-matter values take precedence. These defaults are never written into plans as
-credentials.
+loaded from the local environment: Jira project, issue type, Summary field ID,
+Description field ID, and Progress Comment field, plus Confluence space and
+default parent page. The standard Jira field IDs default to `summary` and
+`description`. Explicit front matter values take precedence. These defaults
+are never written into plans as credentials.
+
+All synchronization JSON and JSONL state belongs to the separate GTD Markdown
+Repository under `.jobutils/`: plans are stored in `sync/plans/`, the latest
+refresh is `sync/observations/latest.json`, and metric events are stored under
+`metrics/events/`. The job-utils repository's `.jobutils/setup/` contains only
+utility setup state and logs.
 
 The local `sync status` operation reports plan, base-snapshot, pending-action,
 and conflict counts from `.jobutils/` without contacting an external service.

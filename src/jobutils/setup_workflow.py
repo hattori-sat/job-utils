@@ -25,6 +25,8 @@ ENV_SPECS = (
     ("JIRA_API_TOKEN", "Jira API token", True, ""),
     ("JIRA_PROJECT", "Jira project key", False, ""),
     ("JIRA_ISSUE_TYPE", "Jira issue type", False, "Task"),
+    ("JIRA_SUMMARY_FIELD", "Jira Summary field id", False, "summary"),
+    ("JIRA_DESCRIPTION_FIELD", "Jira Description field id", False, "description"),
     (
         "JIRA_PROGRESS_COMMENT_FIELD",
         "Jira Progress Comment field id",

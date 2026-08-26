@@ -165,6 +165,8 @@ impact_level: medium
         text = path.read_text(encoding="utf-8")
         self.assertIn("publish_jira: false", text)
         self.assertIn("jira_issue_type: 'Task'", text)
+        self.assertIn("jira_summary_field: 'summary'", text)
+        self.assertIn("jira_description_field: 'description'", text)
         self.assertIn("jira_parent_key: null", text)
         self.assertIn("jira_key: null", text)
         self.assertIn("jira_url: null", text)

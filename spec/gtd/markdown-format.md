@@ -24,9 +24,11 @@ estimate_minutes: 60
 The fields above are the task identity, workflow, and measurement metadata.
 External synchronization fields are optional and are added only for a
 published item. Jira items may use `publish_jira`, `jira_project`,
-`jira_issue_type`, `jira_parent_key`, `jira_parent_path`,
-`jira_progress_comment_field`,
-`jira_key`, and `jira_url`. Confluence items may use `publish_confluence`,
+`jira_issue_type`, `jira_summary_field`, `jira_description_field`,
+`jira_parent_key`, `jira_parent_path`, `jira_progress_comment_field`,
+`jira_key`, and `jira_url`. The default Jira field IDs are `summary` and
+`description`; front matter values override the corresponding `.env` defaults.
+Confluence items may use `publish_confluence`,
 `confluence_space_id`, `confluence_space_key`, `confluence_parent_id`,
 `confluence_page_id`, `confluence_url`, and `confluence_version`. The sync
 engine may also add `sync_hash` after a successful apply. Credentials, cookies,
@@ -37,7 +39,7 @@ Document Markdown also uses `publish_confluence`, `parent_document_id`, and
 parent is represented by `confluence_parent_id` after apply; the local parent
 path remains available for plan generation and rebinding.
 
-The task template also shows the Jira fields with safe empty defaults. Set
+The task template also shows the Jira field IDs with safe defaults. Set
 `publish_jira: true` and the project/issue type before publishing. A successful
 Jira apply fills `jira_key` and `jira_url`; a child task receives its parent's
 `jira_parent_key` automatically when created with the subtask command. When
