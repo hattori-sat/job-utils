@@ -192,7 +192,11 @@ class AtlassianHttpAdapter(SyncAdapter):
         auth_type = (os.environ.get(auth_type_key) or "bearer").strip().lower()
         if not token:
             raise RuntimeError("missing {} token in environment".format(service))
-        data = json.dumps(body).encode("utf-8")
+        data = (
+            None
+            if method.upper() in ("GET", "HEAD", "DELETE")
+            else json.dumps(body).encode("utf-8")
+        )
         req = request.Request(base_url.rstrip("/") + path, data=data, method=method)
         if auth_type == "bearer":
             req.add_header("Authorization", "Bearer " + token)
@@ -209,7 +213,8 @@ class AtlassianHttpAdapter(SyncAdapter):
                 "unsupported {} auth type: {}".format(service, auth_type)
             )
         req.add_header("Accept", "application/json")
-        req.add_header("Content-Type", "application/json")
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
         try:
             with request.urlopen(req, timeout=30) as response:
                 raw = response.read().decode("utf-8")
