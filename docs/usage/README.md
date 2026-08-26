@@ -50,6 +50,12 @@ printing the token. A 401 usually indicates an authentication mismatch; a 403
 usually indicates the authenticated account lacks the required project or
 space permission.
 
+Jira plans use the standard field IDs `summary` and `description` by default.
+Task front matter can override them with `jira_summary_field` and
+`jira_description_field`; Progress Comment is independently mapped by
+`jira_progress_comment_field`. The same resolved IDs are used when importing
+Jira changes back into Markdown.
+
 1. Save the Markdown file.
 2. Run `:GtdSyncCheck` and confirm the refresh prompt.
 3. Run `:GtdSyncPlan` and review the generated plan summary.

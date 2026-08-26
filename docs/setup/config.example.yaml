@@ -4,6 +4,8 @@
 publish_jira: false
 jira_project: YOUR_JIRA_PROJECT
 jira_issue_type: Task
+jira_summary_field: summary
+jira_description_field: description
 jira_parent_key: null
 jira_progress_comment_field: null
 jira_key: null

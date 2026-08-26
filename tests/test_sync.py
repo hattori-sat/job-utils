@@ -371,10 +371,52 @@ Private content.
         document_text = document.read_text(encoding="utf-8")
         self.assertIn("jira_project: 'LCL'", task_text)
         self.assertIn("jira_issue_type: 'Story'", task_text)
+        self.assertIn("jira_summary_field: 'summary'", task_text)
+        self.assertIn("jira_description_field: 'description'", task_text)
         self.assertIn("jira_progress_comment_field: 'customfield_progress'", task_text)
         self.assertIn("confluence_space_id: 'space-local'", document_text)
         self.assertIn("confluence_space_key: 'DOCS'", document_text)
         self.assertIn("confluence_parent_id: 'parent-local'", document_text)
+
+    def test_jira_plan_resolves_standard_field_ids_and_front_matter_overrides(self):
+        task = self.repo / "gtd_tasks" / "task.md"
+        task.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Task\n"
+            "publish_jira: true\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "JIRA_PROJECT": "LCL",
+                "JIRA_SUMMARY_FIELD": "summary",
+                "JIRA_DESCRIPTION_FIELD": "description",
+            },
+            clear=False,
+        ):
+            payload = create_plan(self.repo)["actions"][0]["payload"]
+        self.assertEqual(payload["summary_field"], "summary")
+        self.assertEqual(payload["description_field"], "description")
+
+        task.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Task\n"
+            "publish_jira: true\n"
+            "jira_summary_field: customfield_summary\n"
+            "jira_description_field: customfield_description\n"
+            "---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "JIRA_SUMMARY_FIELD": "summary",
+                "JIRA_DESCRIPTION_FIELD": "description",
+            },
+            clear=False,
+        ):
+            payload = create_plan(self.repo)["actions"][0]["payload"]
+        self.assertEqual(payload["summary_field"], "customfield_summary")
+        self.assertEqual(payload["description_field"], "customfield_description")
 
     def test_applied_unchanged_item_is_not_pending_again(self):
         path = self.repo / "documents" / "guide.md"

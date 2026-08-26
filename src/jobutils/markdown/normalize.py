@@ -91,6 +91,8 @@ def parse_document(path: str) -> MarkdownDocument:
             "confluence_parent_path",
             "jira_project",
             "jira_issue_type",
+            "jira_summary_field",
+            "jira_description_field",
             "jira_parent_key",
             "jira_parent_path",
             "confluence_space_id",

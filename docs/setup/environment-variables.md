@@ -13,6 +13,8 @@ values in Markdown front matter, metric events, setup logs, or reports.
 | `JIRA_API_TOKEN` | Jira Bearer token by default, or Basic API token when `JIRA_AUTH_TYPE=basic`. Keep it secret. |
 | `JIRA_PROJECT` | Default Jira project key for the local workspace. |
 | `JIRA_ISSUE_TYPE` | Default issue type, normally `Task` or `Story`. |
+| `JIRA_SUMMARY_FIELD` | Jira Summary field ID; defaults to the standard system field `summary`. |
+| `JIRA_DESCRIPTION_FIELD` | Jira Description field ID; defaults to the standard system field `description`. |
 | `JIRA_PROGRESS_COMMENT_FIELD` | Optional Jira custom-field ID for Progress Comment. |
 | `JIRA_PROGRESS_COMMENT_FORMAT` | `text` for a text field or `adf` for an Atlassian document field. |
 | `CONFLUENCE_BASE_URL` | Atlassian base URL for Confluence. |
@@ -27,6 +29,13 @@ The lower-level CLI reads configuration from the process environment. The
 normal setup wrappers run from the configured checkout and load `.env` for
 the operations that need it. For manual Python work, load it in the current
 shell or use `jobutils-activate`; never commit the file.
+
+Jira field IDs use the environment defaults unless a task sets
+`jira_summary_field`, `jira_description_field`, or
+`jira_progress_comment_field` in its front matter. The standard Jira system
+field IDs are `summary` and `description`. During setup, Jira's field catalog
+is queried to confirm and materialize the Summary and Description IDs. The
+Progress Comment ID remains manual and is never inferred.
 
 Non-secret project, space, and parent defaults can be overridden by Markdown
 front matter. Tokens are never copied into front matter or synchronization

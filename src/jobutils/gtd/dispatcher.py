@@ -161,6 +161,10 @@ def _task_template(
     today = date.today().isoformat()
     jira_project = jira_project or os.environ.get("JIRA_PROJECT")
     jira_issue_type = jira_issue_type or os.environ.get("JIRA_ISSUE_TYPE", "Task")
+    jira_summary_field = os.environ.get("JIRA_SUMMARY_FIELD", "summary") or "summary"
+    jira_description_field = (
+        os.environ.get("JIRA_DESCRIPTION_FIELD", "description") or "description"
+    )
     jira_progress_comment_field = os.environ.get("JIRA_PROGRESS_COMMENT_FIELD", "")
     parent_value = frontmatter.quote(parent_gtd_id) if parent_gtd_id else "null"
     jira_parent_value = frontmatter.quote(jira_parent_key) if jira_parent_key else "null"
@@ -182,6 +186,8 @@ def _task_template(
             frontmatter.quote(jira_project) if jira_project else "null"
         ),
         "jira_issue_type: {}".format(frontmatter.quote(jira_issue_type)),
+        "jira_summary_field: {}".format(frontmatter.quote(jira_summary_field)),
+        "jira_description_field: {}".format(frontmatter.quote(jira_description_field)),
         "jira_parent_key: {}".format(jira_parent_value),
         "jira_parent_path: {}".format(
             frontmatter.quote(jira_parent_path) if jira_parent_path else "null"

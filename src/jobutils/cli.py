@@ -178,8 +178,11 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     """Execute a command and return a shell-compatible exit status."""
 
-    load_local_env(Path(__file__).resolve().parents[2])
     args = _parser().parse_args(argv)
+    if args.domain == "setup" and args.operation == "init":
+        load_local_env(Path(args.job_utils_root).expanduser().resolve())
+    else:
+        load_local_env(Path(__file__).resolve().parents[2])
     if args.domain == "setup" and args.operation == "init":
         try:
             gtd_repo = args.gtd_repo
@@ -194,6 +197,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 skip_env_prompt=args.skip_env_prompt,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            gtd_repo = Path(result["gtd_repo"])
+            print("GTD Markdown Repository: {}".format(gtd_repo))
+            for filename in ("gtd.md", "docs.md"):
+                path = gtd_repo / filename
+                state = "present" if path.is_file() else "missing"
+                print("  {}: {} ({})".format(filename, path, state))
             print("setup complete")
             return 0
         except (OSError, SetupError, ValueError) as error:

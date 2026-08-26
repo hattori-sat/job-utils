@@ -79,7 +79,19 @@ class MemoryAdapter(SyncAdapter):
         record = self.records[external_id]
         payload = record["payload"]
         if kind == "jira":
-            description = payload.get("description", "")
+            options = options or {}
+            summary_field = options.get("summary_field") or payload.get(
+                "summary_field"
+            ) or "summary"
+            description_field = options.get("description_field") or payload.get(
+                "description_field"
+            ) or "description"
+            title = payload.get(summary_field)
+            if title is None:
+                title = payload.get("title", "")
+            description = payload.get(description_field)
+            if description is None:
+                description = payload.get("description", "")
             if isinstance(description, dict):
                 body = adf_to_markdown(description)
             else:
@@ -88,7 +100,7 @@ class MemoryAdapter(SyncAdapter):
             body = storage_to_markdown(payload.get("storage_body", ""))
         result = {
             "id": external_id,
-            "title": payload.get("title", ""),
+            "title": title if kind == "jira" else payload.get("title", ""),
             "body_markdown": body,
             "url": record["url"],
         }
@@ -122,6 +134,15 @@ class AtlassianHttpAdapter(SyncAdapter):
         value = payload.get("progress_comment", "")
         if payload.get("progress_comment_format") == "adf":
             return markdown_to_adf(value)
+        return value
+
+    @staticmethod
+    def _jira_field(fields: Dict, field_id: str, standard_id: str):
+        """Read a configured Jira field with compatibility for standard keys."""
+
+        value = fields.get(field_id)
+        if value is None and field_id != standard_id:
+            value = fields.get(standard_id)
         return value
 
     def _request(
@@ -180,11 +201,13 @@ class AtlassianHttpAdapter(SyncAdapter):
         """Create a Jira issue or Confluence page."""
 
         if kind == "jira":
+            summary_field = payload.get("summary_field") or "summary"
+            description_field = payload.get("description_field") or "description"
             fields = {
                 "project": {"key": payload["project"]},
-                "summary": payload["title"],
                 "issuetype": {"name": payload["issue_type"]},
-                "description": payload["description"],
+                summary_field: payload["title"],
+                description_field: payload["description"],
             }
             if payload.get("progress_comment_field") and "progress_comment" in payload:
                 fields[payload["progress_comment_field"]] = self._progress_value(payload)
@@ -241,9 +264,11 @@ class AtlassianHttpAdapter(SyncAdapter):
         """Update a Jira issue or Confluence page by stable identity."""
 
         if kind == "jira":
+            summary_field = payload.get("summary_field") or "summary"
+            description_field = payload.get("description_field") or "description"
             fields = {
-                "summary": payload["title"],
-                "description": payload["description"],
+                summary_field: payload["title"],
+                description_field: payload["description"],
             }
             if payload.get("parent_key"):
                 fields["parent"] = {"key": payload["parent_key"]}
@@ -307,14 +332,19 @@ class AtlassianHttpAdapter(SyncAdapter):
                 service="jira",
             )
             fields = result.get("fields", {})
-            description = fields.get("description") or ""
+            options = options or {}
+            summary_field = options.get("summary_field") or "summary"
+            description_field = options.get("description_field") or "description"
+            description = self._jira_field(
+                fields, description_field, "description"
+            ) or ""
             if isinstance(description, dict):
                 description = adf_to_markdown(description)
             else:
                 description = jira_wiki_to_markdown(str(description))
             response = {
                 "id": external_id,
-                "title": fields.get("summary", ""),
+                "title": self._jira_field(fields, summary_field, "summary") or "",
                 "body_markdown": description,
                 "url": self.config["jira_base_url"].rstrip("/")
                 + "/browse/"

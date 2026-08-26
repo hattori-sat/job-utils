@@ -35,6 +35,24 @@ if get(g:, 'jobutils_enable_defaults', 1)
   endif
 endif
 
+if get(g:, 'jobutils_enable_swap_defaults', 1)
+  if has('win32') || has('win64')
+    let s:jobutils_swap_directory = !empty($LOCALAPPDATA)
+          \ ? expand('$LOCALAPPDATA') . '/vim/swap'
+          \ : expand('~/vim/swap')
+  elseif !empty($XDG_STATE_HOME)
+    let s:jobutils_swap_directory = expand('$XDG_STATE_HOME') . '/vim/swap'
+  else
+    let s:jobutils_swap_directory = expand('~/.vim/swap')
+  endif
+  if !isdirectory(s:jobutils_swap_directory)
+    silent! call mkdir(s:jobutils_swap_directory, 'p', 0700)
+  endif
+  if isdirectory(s:jobutils_swap_directory)
+    execute 'set directory^=' . fnameescape(s:jobutils_swap_directory . '//')
+  endif
+endif
+
 if get(g:, 'jobutils_enable_filetype_defaults', 1)
   augroup jobutils_filetype_defaults
     autocmd!

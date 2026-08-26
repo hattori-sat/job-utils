@@ -13,6 +13,9 @@ class SetupCliTests(unittest.TestCase):
             temp = Path(directory)
             job_utils = temp / "job-utils"
             job_utils.mkdir()
+            (job_utils / ".env.example").write_text(
+                "JIRA_API_TOKEN=\n", encoding="utf-8"
+            )
             gtd_repo = temp / "GTDMD"
             subprocess.run(["git", "init", str(gtd_repo)], check=True, stdout=subprocess.PIPE)
             environment = os.environ.copy()
@@ -27,7 +30,7 @@ class SetupCliTests(unittest.TestCase):
                     "setup",
                     "init",
                     "--job-utils-root",
-                    str(root),
+                    str(job_utils),
                     "--gtd-repo",
                     str(gtd_repo),
                     "--skip-env-prompt",
@@ -41,6 +44,9 @@ class SetupCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertTrue((gtd_repo / "gtd.md").is_file())
             self.assertTrue((gtd_repo / "docs.md").is_file())
+            self.assertIn("GTD Markdown Repository: {}".format(gtd_repo.resolve()), result.stdout)
+            self.assertIn("gtd.md: {}".format((gtd_repo / "gtd.md").resolve()), result.stdout)
+            self.assertIn("docs.md: {}".format((gtd_repo / "docs.md").resolve()), result.stdout)
 
     def test_setup_init_rejects_missing_repository(self):
         root = Path(__file__).parents[1]
