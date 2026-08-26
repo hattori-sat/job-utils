@@ -58,6 +58,28 @@ class AtlassianAdapterTests(unittest.TestCase):
             "Bearer bearer-token",
         )
 
+    def test_get_requests_do_not_send_a_json_body(self):
+        captured = {}
+
+        def open_request(request, timeout):
+            captured["request"] = request
+            return _Response()
+
+        with patch.dict(os.environ, {"JIRA_API_TOKEN": "bearer-token"}, clear=True):
+            with patch("jobutils.sync.adapters.request.urlopen", open_request):
+                self.adapter._request(
+                    "https://example.atlassian.net",
+                    "/rest/api/2/myself",
+                    "JIRA_EMAIL",
+                    "JIRA_API_TOKEN",
+                    "GET",
+                    {},
+                    auth_type_key="JIRA_AUTH_TYPE",
+                    service="jira",
+                )
+
+        self.assertIsNone(captured["request"].data)
+
     def test_basic_auth_remains_available_when_selected(self):
         captured = {}
 

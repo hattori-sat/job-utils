@@ -35,6 +35,7 @@
 `tests/test_atlassian_adapter.py`.
 
 - [x] Resolve and cache the current user's `accountId` through `GET /rest/api/2/myself`.
+- [x] Send no JSON body with read-only GET requests so Atlassian edge proxies accept `/myself`.
 - [x] Include `assignee: {accountId: ...}` only in new Jira issue creation.
 - [x] Stop before issue creation when the lookup fails or has no account ID.
 - [x] Keep the account ID in memory only.
