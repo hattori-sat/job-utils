@@ -121,6 +121,153 @@ class SetupWorkflowTests(unittest.TestCase):
             self.assertIn('"status": "completed"', state.read_text())
             self.assertNotIn("API_TOKEN", log.read_text())
 
+    def test_setup_creates_initial_gtd_commit_for_uncommitted_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            repo = Path(directory) / "gtd"
+            self._init_git(repo)
+            (repo / ".gtd.md.swp").write_text("vim recovery data\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.name", "Test User"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+
+            run_setup(
+                root,
+                repo,
+                platform_name="macos",
+                skip_env_prompt=True,
+                home=Path(directory) / "home",
+            )
+
+            revision = subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            status = subprocess.run(
+                ["git", "-C", str(repo), "status", "--porcelain"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(revision.returncode, 0, revision.stderr)
+            self.assertEqual(status.stdout, "")
+
+    def test_setup_does_not_commit_changes_in_an_existing_gtd_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            repo = Path(directory) / "gtd"
+            self._init_git(repo)
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.name", "Test User"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "seed.txt"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "seed"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            (repo / "local.md").write_text("local\n", encoding="utf-8")
+
+            run_setup(
+                root,
+                repo,
+                platform_name="macos",
+                skip_env_prompt=True,
+                home=Path(directory) / "home",
+            )
+
+            status = subprocess.run(
+                ["git", "-C", str(repo), "status", "--porcelain"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertIn("?? local.md", status.stdout)
+
+    def test_setup_commits_bootstrap_changes_when_existing_repository_is_clean(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            repo = Path(directory) / "gtd"
+            self._init_git(repo)
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.name", "Test User"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "seed.txt"],
+                check=True,
+                stdout=subprocess.PIPE,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "commit",
+                    "-m",
+                    "seed",
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            run_setup(
+                root,
+                repo,
+                platform_name="macos",
+                skip_env_prompt=True,
+                home=Path(directory) / "home",
+            )
+
+            commits = subprocess.run(
+                ["git", "-C", str(repo), "log", "--format=%s", "-2"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            status = subprocess.run(
+                ["git", "-C", str(repo), "status", "--porcelain"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(commits.returncode, 0, commits.stderr)
+            self.assertEqual(commits.stdout.splitlines()[0], "chore: initialize GTD repository")
+            self.assertEqual(status.stdout, "")
+
     def test_setup_records_failed_step_for_resumable_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "job-utils"

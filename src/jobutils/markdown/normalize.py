@@ -408,6 +408,77 @@ def markdown_to_storage(body: str) -> str:
     return "\n".join(output)
 
 
+def _render_jira_inline(text: str) -> str:
+    """Render safe Markdown links as Jira wiki links."""
+
+    output: List[str] = []
+    last = 0
+    for match in _INLINE_LINK.finditer(text):
+        output.append(text[last : match.start()])
+        image, label, target = match.group(1), match.group(2), match.group(3)
+        if not _is_safe_url(target, allow_attachment=bool(image)):
+            output.append(label)
+        elif image:
+            output.append("!{}!".format(target))
+        else:
+            output.append("[{}|{}]".format(label, target))
+        last = match.end()
+    output.append(text[last:])
+    return "".join(output)
+
+
+def markdown_to_jira_wiki(body: str) -> str:
+    """Render the supported Markdown subset as Jira v2 wiki text."""
+
+    blocks: List[str] = []
+    for kind, value in _markdown_blocks(body):
+        if kind == "heading":
+            level, text = value
+            blocks.append("h{}. {}".format(level, _render_jira_inline(text)))
+        elif kind == "paragraph":
+            blocks.append(_render_jira_inline(value))
+        elif kind == "unordered":
+            blocks.append(
+                "\n".join("* {}".format(_render_jira_inline(item)) for item in value)
+            )
+        elif kind == "ordered":
+            start, items = value
+            blocks.append(
+                "\n".join(
+                    "# {}".format(_render_jira_inline(item)) for item in items
+                )
+            )
+        elif kind == "table":
+            headers, rows = value
+            blocks.append(
+                "\n".join(
+                    [
+                        "|| {} ||".format(
+                            " || ".join(_render_jira_inline(cell) for cell in headers)
+                        )
+                    ]
+                    + [
+                        "| {} |".format(
+                            " | ".join(_render_jira_inline(cell) for cell in row)
+                        )
+                        for row in rows
+                    ]
+                )
+            )
+        elif kind == "code":
+            language, code = value
+            opening = "{code:" + language + "}" if language else "{code}"
+            blocks.append("\n".join([opening, code, "{code}"]))
+        elif kind == "macro":
+            name, macro_body = value
+            blocks.append(
+                "\n".join(
+                    [":::confluence-macro name={}".format(name), macro_body, ":::"]
+                )
+            )
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
 class _StorageNode:
     """Small parsed storage tree node used by the safe Markdown reader."""
 
@@ -698,6 +769,60 @@ def _adf_inline_to_markdown(items: List[Dict]) -> str:
             else text
         )
     return "".join(output)
+
+
+def _jira_wiki_inline_to_markdown(text: str) -> str:
+    """Convert Jira wiki links and images to safe Markdown links."""
+
+    text = re.sub(
+        r"!([^!]+)!",
+        lambda match: "![image]({})".format(match.group(1))
+        if _is_safe_url(match.group(1), allow_attachment=True)
+        else "image",
+        text,
+    )
+    return re.sub(
+        r"\[([^\]|]+)\|([^\]]+)\]",
+        lambda match: "[{}]({})".format(match.group(1), match.group(2))
+        if _is_safe_url(match.group(2))
+        else match.group(1),
+        text,
+    )
+
+
+def jira_wiki_to_markdown(wiki: str) -> str:
+    """Convert the supported Jira v2 wiki text subset to Markdown."""
+
+    lines = wiki.replace("\r\n", "\n").split("\n")
+    output: List[str] = []
+    in_code = False
+    code_language = ""
+    for line in lines:
+        if line.startswith("{code"):
+            if not in_code:
+                match = re.match(r"\{code(?::([^}]+))?\}", line)
+                code_language = match.group(1) if match else ""
+                output.extend(["```{}".format(code_language)])
+                in_code = True
+            else:
+                output.append("```")
+                in_code = False
+            continue
+        if in_code:
+            output.append(line)
+            continue
+        heading = re.match(r"^h([1-6])\.\s+(.*)$", line)
+        if heading:
+            output.append("{} {}".format("#" * int(heading.group(1)), heading.group(2)))
+            continue
+        if line.startswith("* "):
+            output.append("- " + _jira_wiki_inline_to_markdown(line[2:]))
+            continue
+        if line.startswith("# "):
+            output.append("1. " + _jira_wiki_inline_to_markdown(line[2:]))
+            continue
+        output.append(_jira_wiki_inline_to_markdown(line))
+    return canonical_body("\n".join(output))
 
 
 def _adf_list(block: Dict, ordered: bool) -> str:

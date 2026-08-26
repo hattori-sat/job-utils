@@ -5,10 +5,12 @@ import json
 import os
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
+from urllib.error import HTTPError
 from urllib import request
 
 from jobutils.markdown.normalize import (
     adf_to_markdown,
+    jira_wiki_to_markdown,
     markdown_to_adf,
     markdown_to_storage,
     storage_to_markdown,
@@ -77,7 +79,11 @@ class MemoryAdapter(SyncAdapter):
         record = self.records[external_id]
         payload = record["payload"]
         if kind == "jira":
-            body = adf_to_markdown(payload.get("description_adf", {}))
+            description = payload.get("description", "")
+            if isinstance(description, dict):
+                body = adf_to_markdown(description)
+            else:
+                body = jira_wiki_to_markdown(str(description))
         else:
             body = storage_to_markdown(payload.get("storage_body", ""))
         result = {
@@ -98,7 +104,7 @@ class MemoryAdapter(SyncAdapter):
 
 
 class AtlassianHttpAdapter(SyncAdapter):
-    """Minimal Jira Cloud v3 and Confluence Cloud v2 adapter.
+    """Minimal Jira Cloud v2 and Confluence Cloud v2 adapter.
 
     Credentials are read from environment variables and never serialized into
     a plan or state file.
@@ -126,24 +132,49 @@ class AtlassianHttpAdapter(SyncAdapter):
         token_key: str,
         method: str,
         body: Dict,
+        auth_type_key: str = "",
+        service: str = "atlassian",
     ) -> Dict:
         """Send one authenticated JSON request using environment credentials."""
 
-        email = os.environ.get(email_key)
         token = os.environ.get(token_key)
-        if not email or not token:
-            raise RuntimeError("missing Atlassian credentials in environment")
-        raw_auth = base64.b64encode((email + ":" + token).encode("utf-8")).decode(
-            "ascii"
-        )
+        auth_type = (os.environ.get(auth_type_key) or "bearer").strip().lower()
+        if not token:
+            raise RuntimeError("missing {} token in environment".format(service))
         data = json.dumps(body).encode("utf-8")
         req = request.Request(base_url.rstrip("/") + path, data=data, method=method)
-        req.add_header("Authorization", "Basic " + raw_auth)
+        if auth_type == "bearer":
+            req.add_header("Authorization", "Bearer " + token)
+        elif auth_type == "basic":
+            email = os.environ.get(email_key)
+            if not email:
+                raise RuntimeError("missing {} email in environment".format(service))
+            raw_auth = base64.b64encode((email + ":" + token).encode("utf-8")).decode(
+                "ascii"
+            )
+            req.add_header("Authorization", "Basic " + raw_auth)
+        else:
+            raise RuntimeError(
+                "unsupported {} auth type: {}".format(service, auth_type)
+            )
         req.add_header("Accept", "application/json")
         req.add_header("Content-Type", "application/json")
-        with request.urlopen(req, timeout=30) as response:
-            raw = response.read().decode("utf-8")
-            return json.loads(raw) if raw else {}
+        try:
+            with request.urlopen(req, timeout=30) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw) if raw else {}
+        except HTTPError as error:
+            try:
+                detail = error.read().decode("utf-8", errors="replace")
+            except OSError:
+                detail = ""
+            detail = detail.replace(token, "<redacted-token>")[:2000]
+            message = "{} {} {}: HTTP {}".format(
+                service, method, path, error.code
+            )
+            if detail:
+                message += " " + detail
+            raise RuntimeError(message) from error
 
     def create(self, kind: str, payload: Dict) -> Dict:
         """Create a Jira issue or Confluence page."""
@@ -153,7 +184,7 @@ class AtlassianHttpAdapter(SyncAdapter):
                 "project": {"key": payload["project"]},
                 "summary": payload["title"],
                 "issuetype": {"name": payload["issue_type"]},
-                "description": payload["description_adf"],
+                "description": payload["description"],
             }
             if payload.get("progress_comment_field") and "progress_comment" in payload:
                 fields[payload["progress_comment_field"]] = self._progress_value(payload)
@@ -162,11 +193,13 @@ class AtlassianHttpAdapter(SyncAdapter):
                 body["fields"]["parent"] = {"key": payload["parent_key"]}
             result = self._request(
                 self.config["jira_base_url"],
-                "/rest/api/3/issue",
+                "/rest/api/2/issue",
                 "JIRA_EMAIL",
                 "JIRA_API_TOKEN",
                 "POST",
                 body,
+                auth_type_key="JIRA_AUTH_TYPE",
+                service="jira",
             )
             return {
                 "id": result.get("id"),
@@ -189,6 +222,8 @@ class AtlassianHttpAdapter(SyncAdapter):
             "CONFLUENCE_API_TOKEN",
             "POST",
             body,
+            auth_type_key="CONFLUENCE_AUTH_TYPE",
+            service="confluence",
         )
         page_id = str(result.get("id"))
         return {
@@ -208,7 +243,7 @@ class AtlassianHttpAdapter(SyncAdapter):
         if kind == "jira":
             fields = {
                 "summary": payload["title"],
-                "description": payload["description_adf"],
+                "description": payload["description"],
             }
             if payload.get("parent_key"):
                 fields["parent"] = {"key": payload["parent_key"]}
@@ -217,11 +252,13 @@ class AtlassianHttpAdapter(SyncAdapter):
             body = {"fields": fields}
             result = self._request(
                 self.config["jira_base_url"],
-                "/rest/api/3/issue/" + external_id,
+                "/rest/api/2/issue/" + external_id,
                 "JIRA_EMAIL",
                 "JIRA_API_TOKEN",
                 "PUT",
                 body,
+                auth_type_key="JIRA_AUTH_TYPE",
+                service="jira",
             )
             return {
                 "id": external_id,
@@ -243,6 +280,8 @@ class AtlassianHttpAdapter(SyncAdapter):
             "CONFLUENCE_API_TOKEN",
             "PUT",
             body,
+            auth_type_key="CONFLUENCE_AUTH_TYPE",
+            service="confluence",
         )
         return {
             "id": external_id,
@@ -259,17 +298,24 @@ class AtlassianHttpAdapter(SyncAdapter):
         if kind == "jira":
             result = self._request(
                 self.config["jira_base_url"],
-                "/rest/api/3/issue/" + external_id,
+                "/rest/api/2/issue/" + external_id,
                 "JIRA_EMAIL",
                 "JIRA_API_TOKEN",
                 "GET",
                 {},
+                auth_type_key="JIRA_AUTH_TYPE",
+                service="jira",
             )
             fields = result.get("fields", {})
+            description = fields.get("description") or ""
+            if isinstance(description, dict):
+                description = adf_to_markdown(description)
+            else:
+                description = jira_wiki_to_markdown(str(description))
             response = {
                 "id": external_id,
                 "title": fields.get("summary", ""),
-                "body_markdown": adf_to_markdown(fields.get("description") or {}),
+                "body_markdown": description,
                 "url": self.config["jira_base_url"].rstrip("/")
                 + "/browse/"
                 + external_id,
@@ -294,6 +340,8 @@ class AtlassianHttpAdapter(SyncAdapter):
             "CONFLUENCE_API_TOKEN",
             "GET",
             {},
+            auth_type_key="CONFLUENCE_AUTH_TYPE",
+            service="confluence",
         )
         body = result.get("body", {}).get("storage", {}).get("value", "")
         return {

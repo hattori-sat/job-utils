@@ -32,6 +32,14 @@ Setup is resumable. Existing files are never overwritten. Missing `gtd.md`,
 GTD Repository. Setup state and a redacted step log are stored under
 `.jobutils/setup/` in the job-utils checkout and are ignored by Git.
 
+When setup starts with a clean GTD Repository, it creates one local setup
+commit after bootstrapping these files. This also covers a repository whose
+README already has the first commit. When there is no commit yet, the commit
+contains the current non-ignored repository contents; review the selected path
+before setup. Setup never pushes. If setup starts with existing local changes,
+it does not auto-commit them. Vim swap files (`*.swp` and `*.swo`) are ignored
+by the managed GTD `.gitignore` block.
+
 If setup is interrupted, run the same platform script again. It reuses the
 virtual environment and fills only missing configuration or registration.
 
@@ -68,6 +76,11 @@ shown in the setup output.
   configured repository's `gtd.md`; an explicit file argument is passed
   through unchanged. A dirty or diverged repository stops before Vim opens.
 - `jobutils-activate` is an optional helper for manual Python commands.
+
+Atlassian synchronization uses Bearer tokens by default. The setup file
+contains `JIRA_AUTH_TYPE` and `CONFLUENCE_AUTH_TYPE`; set either to `basic` only
+when using an email plus Basic API token. Jira issue synchronization uses REST
+API v2.
 
 The wrappers use absolute paths, so the CLI and Vim do not depend on the
 current directory or on a manually activated virtual environment.

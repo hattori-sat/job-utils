@@ -64,7 +64,10 @@ written back to the child front matter. An unresolved required parent stops
 the apply before the child request is sent.
 
 The adapter boundary supports a deterministic memory adapter for tests and an
-HTTP adapter for Jira Cloud REST API v3 and Confluence Cloud REST API v2.
+HTTP adapter for Jira Cloud REST API v2 and Confluence Cloud REST API v2. Jira
+descriptions use Jira wiki text; Confluence bodies use storage content.
+Bearer authentication is the default for both services, with explicit Basic
+authentication available through the corresponding `.env` auth-type setting.
 
 Each successful action records `sync_applied` in the repository's append-only
 metric event log. An adapter failure records `sync_error` before apply stops.
@@ -92,13 +95,14 @@ of the normal user workflow.
 
 ## Rendering rules
 
-- Task descriptions are rendered to Jira ADF with headings, paragraphs, links,
-  unordered/ordered lists, tables, and fenced code blocks.
+- Task descriptions are rendered to Jira v2 wiki text with headings,
+  paragraphs, links, unordered/ordered lists, tables, and fenced code blocks.
 - Document bodies are rendered to Confluence storage content with headings,
   paragraphs, links, images, unordered/ordered lists, pipe tables, fenced code
   blocks, and explicit `:::confluence-macro name=...` directives.
-- The supported Confluence storage and Jira ADF subset is converted back to
-  canonical Markdown during an `import` action.
+- The supported Confluence storage and Jira wiki subset is converted back to
+  canonical Markdown during an `import` action. ADF is accepted defensively
+  when reading older Jira records.
 - Implementation Notes are removed before either payload is created.
 - Local relative references are replaced by published external URLs when
   available; private Markdown paths are removed from external text.

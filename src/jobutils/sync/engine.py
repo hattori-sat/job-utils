@@ -13,7 +13,11 @@ from urllib.parse import urlparse
 
 from jobutils.gtd import frontmatter
 from jobutils.gitops import GitOperationError, fetch as git_fetch
-from jobutils.markdown.normalize import markdown_to_adf, markdown_to_storage, parse_document
+from jobutils.markdown.normalize import (
+    markdown_to_jira_wiki,
+    markdown_to_storage,
+    parse_document,
+)
 from jobutils.metrics.events import append_event
 
 from .adapters import SyncAdapter
@@ -235,7 +239,7 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
         return {
             "gtd_id": document.metadata.get("gtd_id"),
             "title": document.metadata.get("title") or path.stem,
-            "description_adf": markdown_to_adf(body),
+            "description": markdown_to_jira_wiki(body),
             "project": document.metadata.get("jira_project") or defaults["jira_project"],
             "issue_type": document.metadata.get("jira_issue_type") or defaults["jira_issue_type"],
             "parent_key": document.metadata.get("jira_parent_key"),
@@ -623,7 +627,7 @@ def _is_valid_payload(kind: str, payload: Dict) -> bool:
     if kind == "jira":
         return (
             isinstance(payload.get("title"), str)
-            and isinstance(payload.get("description_adf"), dict)
+            and isinstance(payload.get("description"), str)
             and isinstance(payload.get("issue_type"), str)
             and isinstance(payload.get("project"), str)
         )
