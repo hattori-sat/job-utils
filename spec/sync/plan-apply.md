@@ -73,8 +73,12 @@ written back to the child front matter. An unresolved required parent stops
 the apply before the child request is sent.
 
 The adapter boundary supports a deterministic memory adapter for tests and an
-HTTP adapter for Jira Cloud REST API v2 and Confluence Cloud REST API v2. Jira
-descriptions use Jira wiki text; Confluence bodies use storage content.
+HTTP adapter for Jira Cloud REST API v2 and Confluence Cloud REST API v2. For
+task Markdown, the Jira summary is sourced from the front matter `title`, and
+the Jira description is sourced only from the `# Description` section. The
+`# Summary`, `# Objective`, and other task sections are not copied into the
+description. Jira descriptions use Jira wiki text; Confluence bodies use
+storage content.
 Bearer authentication is the default for both services, with explicit Basic
 authentication available through the corresponding `.env` auth-type setting.
 

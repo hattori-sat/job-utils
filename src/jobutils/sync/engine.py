@@ -230,7 +230,10 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
 
     document = parse_document(str(path))
     defaults = load_sync_defaults()
-    body = externalize_references(repo_root, document.public_body, path)
+    body = document.public_body
+    if kind == "jira":
+        body = document.section("Description")
+    body = externalize_references(repo_root, body, path)
     body = append_reference_section(
         body,
         externalize_structured_references(
