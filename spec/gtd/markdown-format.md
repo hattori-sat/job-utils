@@ -25,6 +25,7 @@ The fields above are the task identity, workflow, and measurement metadata.
 External synchronization fields are optional and are added only for a
 published item. Jira items may use `publish_jira`, `jira_project`,
 `jira_issue_type`, `jira_summary_field`, `jira_description_field`,
+`jira_assign_to_self`,
 `jira_parent_key`, `jira_parent_path`, `jira_progress_comment_field`,
 `jira_key`, and `jira_url`. The default Jira field IDs are `summary` and
 `description`; front matter values override the corresponding `.env` defaults.

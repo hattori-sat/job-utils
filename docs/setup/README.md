@@ -74,6 +74,10 @@ setting. The lower-level operation is:
 jobutils setup init --gtd-repo /absolute/path/to/your-gtd-repository
 ```
 
+New Jira issues are assigned to the authenticated Jira user by default. Set
+`JIRA_ASSIGN_TO_SELF=false` in `.env` to use Jira's project default assignee
+instead. Existing Jira issues are not reassigned by Markdown updates.
+
 Validate the non-secret destination profile with:
 
 ```text

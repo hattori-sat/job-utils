@@ -10,6 +10,8 @@ def load_sync_defaults() -> Dict[str, str]:
     return {
         "jira_project": os.environ.get("JIRA_PROJECT", ""),
         "jira_issue_type": os.environ.get("JIRA_ISSUE_TYPE", "Task") or "Task",
+        "jira_assign_to_self": os.environ.get("JIRA_ASSIGN_TO_SELF", "true")
+        or "true",
         "jira_summary_field": os.environ.get("JIRA_SUMMARY_FIELD", "summary")
         or "summary",
         "jira_description_field": os.environ.get(

@@ -44,6 +44,12 @@ available classifications and current metrics.
 Only files whose front matter enables `publish_jira: true` or
 `publish_confluence: true` are included in synchronization.
 
+New Jira issues are assigned to the authenticated user when
+`JIRA_ASSIGN_TO_SELF=true` (the setup default). The adapter obtains the
+current user's Jira `accountId` before creating the issue. Set it to `false` to
+leave assignment to Jira's project default; existing issues are not reassigned
+by synchronization updates.
+
 Jira uses REST API v2 with Bearer authentication by default. If an external
 request fails, the error identifies the service and endpoint path without
 printing the token. A 401 usually indicates an authentication mismatch; a 403

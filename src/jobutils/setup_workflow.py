@@ -31,6 +31,12 @@ ENV_SPECS = (
     ("JIRA_SUMMARY_FIELD", "Jira Summary field id", False, "summary"),
     ("JIRA_DESCRIPTION_FIELD", "Jira Description field id", False, "description"),
     (
+        "JIRA_ASSIGN_TO_SELF",
+        "Assign new Jira issues to the current user (true or false)",
+        False,
+        "true",
+    ),
+    (
         "JIRA_PROGRESS_COMMENT_FIELD",
         "Jira Progress Comment field id",
         False,

@@ -78,6 +78,11 @@ descriptions use Jira wiki text; Confluence bodies use storage content.
 Bearer authentication is the default for both services, with explicit Basic
 authentication available through the corresponding `.env` auth-type setting.
 
+New Jira create actions use the non-secret `JIRA_ASSIGN_TO_SELF` default to
+assign the authenticated Jira user. Jira update actions do not change the
+existing assignee. A failed current-user lookup stops the create action before
+the issue-create request is sent.
+
 Each successful action records `sync_applied` in the repository's append-only
 metric event log. An adapter failure records `sync_error` before apply stops.
 

@@ -851,6 +851,20 @@ Objective.
         self.assertEqual(by_kind["confluence"]["space_key"], "DOCS")
         self.assertEqual(by_kind["confluence"]["parent_id"], "parent-local")
 
+    def test_sync_payload_assigns_new_jira_issues_to_current_user_by_default(self):
+        jira = self.repo / "gtd_tasks" / "task.md"
+        jira.write_text(
+            "---\ngtd_id: task-1\nkind: task\ntitle: Task\npublish_jira: true\n---\n\n# Summary\n",
+            encoding="utf-8",
+        )
+        with patch.dict(os.environ, {"JIRA_ASSIGN_TO_SELF": "true"}, clear=False):
+            payload = create_plan(self.repo)["actions"][0]["payload"]
+        self.assertTrue(payload["assign_to_self"])
+
+        with patch.dict(os.environ, {"JIRA_ASSIGN_TO_SELF": "false"}, clear=False):
+            payload = create_plan(self.repo)["actions"][0]["payload"]
+        self.assertFalse(payload["assign_to_self"])
+
     def test_sync_status_reports_local_state(self):
         plans = self.repo / ".jobutils" / "sync" / "plans"
         bases = self.repo / ".jobutils" / "sync" / "bases"

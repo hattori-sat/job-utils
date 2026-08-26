@@ -23,7 +23,9 @@ class SetupProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".env.example").write_text(
-                "JIRA_API_TOKEN=\nCONFLUENCE_API_TOKEN=\n", encoding="utf-8"
+                "JIRA_API_TOKEN=\nCONFLUENCE_API_TOKEN=\n"
+                "JIRA_ASSIGN_TO_SELF=true\n",
+                encoding="utf-8",
             )
 
             def answer(prompt):
@@ -38,6 +40,7 @@ class SetupProfileTests(unittest.TestCase):
             content = env_path.read_text(encoding="utf-8")
             self.assertIn("JIRA_API_TOKEN=test-token", content)
             self.assertIn("CONFLUENCE_API_TOKEN=test-token", content)
+            self.assertIn("JIRA_ASSIGN_TO_SELF=true", content)
 
     def test_vimrc_registration_and_shell_profile_are_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:

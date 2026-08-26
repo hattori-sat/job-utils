@@ -168,6 +168,70 @@ class AtlassianAdapterTests(unittest.TestCase):
         self.assertIn("# Remote body", result["body_markdown"])
         self.assertEqual(request_mock.call_args.args[1], "/rest/api/2/issue/DEMO-1")
 
+    def test_jira_create_assigns_current_user_when_enabled(self):
+        payload = {
+            "project": "DEMO",
+            "title": "Task",
+            "issue_type": "Task",
+            "description": "h1. Task\n",
+            "assign_to_self": True,
+        }
+        with patch.object(
+            self.adapter,
+            "_request",
+            side_effect=[
+                {"accountId": "account-self"},
+                {"id": "10001", "key": "DEMO-1"},
+            ],
+        ) as request_mock:
+            result = self.adapter.create("jira", payload)
+
+        self.assertEqual(result["key"], "DEMO-1")
+        self.assertEqual(request_mock.call_args_list[0].args[1], "/rest/api/2/myself")
+        issue_request = request_mock.call_args_list[1]
+        self.assertEqual(issue_request.args[1], "/rest/api/2/issue")
+        self.assertEqual(
+            issue_request.args[5]["fields"]["assignee"],
+            {"accountId": "account-self"},
+        )
+
+    def test_jira_create_omits_assignee_when_self_assignment_is_disabled(self):
+        payload = {
+            "project": "DEMO",
+            "title": "Task",
+            "issue_type": "Task",
+            "description": "h1. Task\n",
+            "assign_to_self": False,
+        }
+        with patch.object(
+            self.adapter,
+            "_request",
+            return_value={"id": "10001", "key": "DEMO-1"},
+        ) as request_mock:
+            self.adapter.create("jira", payload)
+
+        fields = request_mock.call_args.args[5]["fields"]
+        self.assertNotIn("assignee", fields)
+
+    def test_jira_self_assignment_failure_happens_before_issue_create(self):
+        payload = {
+            "project": "DEMO",
+            "title": "Task",
+            "issue_type": "Task",
+            "description": "h1. Task\n",
+            "assign_to_self": True,
+        }
+        with patch.object(
+            self.adapter,
+            "_request",
+            side_effect=RuntimeError("current user unavailable"),
+        ) as request_mock:
+            with self.assertRaisesRegex(RuntimeError, "current user unavailable"):
+                self.adapter.create("jira", payload)
+
+        self.assertEqual(request_mock.call_count, 1)
+        self.assertEqual(request_mock.call_args.args[1], "/rest/api/2/myself")
+
     def test_confluence_create_keeps_v2_endpoint_and_uses_service_auth(self):
         payload = {
             "space_id": "space-1",

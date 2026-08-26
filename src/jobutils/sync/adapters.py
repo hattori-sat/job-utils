@@ -126,6 +126,36 @@ class AtlassianHttpAdapter(SyncAdapter):
         """Store non-secret endpoint configuration for later requests."""
 
         self.config = config
+        self._jira_current_user_account_id = None
+
+    def _jira_current_user_account_id_value(self) -> str:
+        """Resolve and cache the authenticated Jira Cloud user's account ID."""
+
+        if self._jira_current_user_account_id is None:
+            result = self._request(
+                self.config["jira_base_url"],
+                "/rest/api/2/myself",
+                "JIRA_EMAIL",
+                "JIRA_API_TOKEN",
+                "GET",
+                {},
+                auth_type_key="JIRA_AUTH_TYPE",
+                service="jira",
+            )
+            account_id = result.get("accountId") if isinstance(result, dict) else None
+            if not isinstance(account_id, str) or not account_id.strip():
+                raise RuntimeError("jira current user response did not include accountId")
+            self._jira_current_user_account_id = account_id
+        return self._jira_current_user_account_id
+
+    @staticmethod
+    def _assign_to_self_enabled(payload: Dict) -> bool:
+        """Interpret the non-secret create payload switch safely."""
+
+        value = payload.get("assign_to_self", False)
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
 
     @staticmethod
     def _progress_value(payload: Dict):
@@ -211,6 +241,10 @@ class AtlassianHttpAdapter(SyncAdapter):
             }
             if payload.get("progress_comment_field") and "progress_comment" in payload:
                 fields[payload["progress_comment_field"]] = self._progress_value(payload)
+            if self._assign_to_self_enabled(payload):
+                fields["assignee"] = {
+                    "accountId": self._jira_current_user_account_id_value()
+                }
             body = {"fields": fields}
             if payload.get("parent_key"):
                 body["fields"]["parent"] = {"key": payload["parent_key"]}

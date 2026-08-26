@@ -13,6 +13,7 @@ values in Markdown front matter, metric events, setup logs, or reports.
 | `JIRA_API_TOKEN` | Jira Bearer token by default, or Basic API token when `JIRA_AUTH_TYPE=basic`. Keep it secret. |
 | `JIRA_PROJECT` | Default Jira project key for the local workspace. |
 | `JIRA_ISSUE_TYPE` | Default issue type, normally `Task` or `Story`. |
+| `JIRA_ASSIGN_TO_SELF` | `true` by default; assigns newly created Jira issues to the authenticated user. Set `false` to leave new issues unassigned. |
 | `JIRA_SUMMARY_FIELD` | Jira Summary field ID; defaults to the standard system field `summary`. |
 | `JIRA_DESCRIPTION_FIELD` | Jira Description field ID; defaults to the standard system field `description`. |
 | `JIRA_PROGRESS_COMMENT_FIELD` | Optional Jira custom-field ID for Progress Comment. |
@@ -24,6 +25,18 @@ values in Markdown front matter, metric events, setup logs, or reports.
 | `CONFLUENCE_SPACE_ID` | Default Confluence space ID. |
 | `CONFLUENCE_SPACE_KEY` | Default Confluence space key for the local workspace. |
 | `CONFLUENCE_PARENT_ID` | Default parent page ID for new document pages. |
+
+When `JIRA_ASSIGN_TO_SELF=true`, creating a new Jira issue first reads the
+authenticated user's `accountId` from Jira and includes that account as the
+assignee. This lookup is read-only and the account ID is kept in memory only.
+Existing issues are not reassigned during ordinary Markdown updates. Set the
+variable to `false` when new issues should use Jira's default assignee.
+
+When `JIRA_ASSIGN_TO_SELF=true`, creating a new Jira issue first reads the
+authenticated user's `accountId` from Jira and includes that account as the
+assignee. This lookup is read-only and the account ID is kept in memory only.
+Existing issues are not reassigned during ordinary Markdown updates. Set the
+variable to `false` when new issues should use Jira's default assignee.
 
 The lower-level CLI reads configuration from the process environment. The
 normal setup wrappers run from the configured checkout and load `.env` for
