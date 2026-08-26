@@ -840,7 +840,7 @@ jira_project: 'JOB'
 
 # Summary
 
-Summary must not be sent as the Jira description.
+Jira summary comes from this Markdown section.
 
 # Description
 
@@ -860,9 +860,43 @@ Objective must not be sent as the Jira description.
         payload = create_plan(self.repo)["actions"][0]["payload"]
 
         self.assertIn("Only this description is sent to Jira.", payload["description"])
-        self.assertNotIn("Summary must not be sent", payload["description"])
+        self.assertEqual(payload["title"], "Jira summary comes from this Markdown section.")
+        self.assertNotIn("Jira summary comes from", payload["description"])
         self.assertNotIn("progress must use its own field", payload["description"])
         self.assertNotIn("Objective must not be sent", payload["description"])
+
+    def test_jira_check_compares_only_description_section(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Task title'
+publish_jira: 'true'
+jira_project: 'JOB'
+---
+
+# Summary
+
+Jira summary.
+
+# Description
+
+Jira description.
+
+# Objective
+
+Local-only objective.
+""",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        observation = check(self.repo, adapter)
+
+        self.assertEqual(observation["items"][0]["state"], "clean")
 
     def test_sync_payload_uses_environment_defaults_for_missing_front_matter(self):
         jira = self.repo / "gtd_tasks" / "task.md"

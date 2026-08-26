@@ -225,6 +225,21 @@ def _published_paths(repo_root: Path) -> List[Path]:
     return result
 
 
+def _jira_summary(document, path: Path) -> str:
+    """Return the Jira summary from the task's Markdown Summary section."""
+
+    summary = " ".join(document.section("Summary").split())
+    return summary or document.metadata.get("title") or path.stem
+
+
+def _sync_body(document, kind: str) -> str:
+    """Return the public body represented by one external projection."""
+
+    if kind == "jira":
+        return document.section("Description")
+    return document.public_body
+
+
 def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
     """Build the sanitized adapter payload for one Markdown document."""
 
@@ -246,7 +261,7 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
             assign_to_self = defaults["jira_assign_to_self"]
         return {
             "gtd_id": document.metadata.get("gtd_id"),
-            "title": document.metadata.get("title") or path.stem,
+            "title": _jira_summary(document, path),
             "description": markdown_to_jira_wiki(body),
             "project": document.metadata.get("jira_project") or defaults["jira_project"],
             "issue_type": document.metadata.get("jira_issue_type") or defaults["jira_issue_type"],
@@ -292,9 +307,14 @@ def _observation_is_mergeable(document, observed: Dict) -> bool:
     remote_body = remote.get("body_markdown")
     if not isinstance(base, str) or not isinstance(remote_body, str):
         return False
+    kind = observed.get("kind") or (
+        "jira"
+        if _bool(document.metadata.get("publish_jira"))
+        else "confluence"
+    )
     _, conflict = three_way_merge(
         canonical_sync_body(base),
-        canonical_sync_body(document.public_body),
+        canonical_sync_body(_sync_body(document, kind)),
         canonical_sync_body(remote_body),
     )
     return not conflict
@@ -381,7 +401,7 @@ def create_plan(
                     operation = "conflict"
                     blocked_reason = "local and external content overlap"
             elif observed and observed.get("state") == "external_changed":
-                if canonical_sync_body(document.public_body) == observed.get(
+                if canonical_sync_body(_sync_body(document, kind)) == observed.get(
                     "local_public_body"
                 ):
                     operation = "import"
@@ -407,7 +427,7 @@ def create_plan(
                 and not document.metadata.get("sync_hash")
                 and base_file.is_file()
                 and canonical_sync_body(base_file.read_text(encoding="utf-8"))
-                == canonical_sync_body(document.public_body)
+                == canonical_sync_body(_sync_body(document, kind))
             ):
                 continue
         action = {
@@ -903,7 +923,10 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 )
             conflict_path = _managed_action_path(repo_root, action["path"])
             _write_conflict_markers(
-                conflict_path, observed.get("base_body"), observed["remote"]
+                conflict_path,
+                observed.get("base_body"),
+                observed["remote"],
+                action["kind"],
             )
             _write_conflict_record(
                 repo_root,
@@ -941,7 +964,8 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                         action["path"]
                     )
                 )
-            if canonical_sync_body(parse_document(str(path)).public_body) != observed.get(
+            document = parse_document(str(path))
+            if canonical_sync_body(_sync_body(document, action["kind"])) != observed.get(
                 "local_public_body"
             ):
                 raise SyncError(
@@ -949,7 +973,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                         action["path"]
                     )
                 )
-            _import_remote_record(repo_root, path, observed["remote"])
+            _import_remote_record(repo_root, path, observed["remote"], action["kind"])
             document = parse_document(str(path))
             append_event(
                 repo_root,
@@ -982,7 +1006,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             document = parse_document(str(path))
             merged, conflict = three_way_merge(
                 canonical_sync_body(observed.get("base_body") or ""),
-                canonical_sync_body(document.public_body),
+                canonical_sync_body(_sync_body(document, action["kind"])),
                 canonical_sync_body(observed["remote"].get("body_markdown", "")),
             )
             if conflict:
@@ -991,8 +1015,13 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                         action["path"]
                     )
                 )
+            merged_body = (
+                _replace_level_one_section(document.public_body, "Description", merged)
+                if action["kind"] == "jira"
+                else merged
+            )
             _write_managed_public_body(
-                path, merged, document.implementation_note, format_public=True
+                path, merged_body, document.implementation_note, format_public=True
             )
             payload = _payload(repo_root, path, action["kind"])
         else:
@@ -1051,7 +1080,11 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
         )
         if external_id:
             created_external_ids[action["path"]] = str(external_id)
-        _write_base(repo_root, path, parse_document(str(path)).public_body)
+        _write_base(
+            repo_root,
+            path,
+            _sync_body(parse_document(str(path)), action["kind"]),
+        )
         if action["action"] == "update":
             _clear_conflict_record(repo_root, path)
         append_event(
@@ -1206,9 +1239,21 @@ def check(
                 if base_file.is_file()
                 else None
             )
-            local_public_body = canonical_sync_body(document.public_body)
+            local_public_body = canonical_sync_body(_sync_body(document, kind))
             remote_public_body = canonical_sync_body(remote_body)
             state = classify_drift(base, local_public_body, remote_public_body)
+            if kind == "jira":
+                summary_changed = remote.get("title") is not None and _jira_summary(
+                    document, path
+                ) != " ".join(str(remote["title"]).split())
+                progress_changed = remote.get("progress_comment") is not None and (
+                    canonical_sync_body(document.section("Progress Comment"))
+                    != canonical_sync_body(str(remote["progress_comment"]))
+                )
+                if state in ("clean", "converged") and (
+                    summary_changed or progress_changed
+                ):
+                    state = "external_changed"
             items.append(
                 {
                     "path": relative_path,
@@ -1378,7 +1423,7 @@ def _write_managed_public_body(
     path.write_text(rendered, encoding="utf-8")
 
 
-def _apply_remote_metadata(path: Path, remote: Dict) -> None:
+def _apply_remote_metadata(path: Path, remote: Dict, kind: str) -> None:
     """Materialize external title, relationship metadata, and progress text."""
 
     document = parse_document(str(path))
@@ -1395,6 +1440,9 @@ def _apply_remote_metadata(path: Path, remote: Dict) -> None:
             frontmatter.set_value(lines, key, str(value))
             changed = True
     body = document.public_body
+    if kind == "jira" and remote.get("title") is not None:
+        body = _replace_level_one_section(body, "Summary", str(remote["title"]))
+        changed = True
     if remote.get("progress_comment") is not None:
         body = _replace_level_one_section(
             body, "Progress Comment", str(remote["progress_comment"])
@@ -1406,22 +1454,29 @@ def _apply_remote_metadata(path: Path, remote: Dict) -> None:
         )
 
 
-def _import_remote_record(repo_root: Path, path: Path, remote: Dict) -> None:
+def _import_remote_record(
+    repo_root: Path, path: Path, remote: Dict, kind: str
+) -> None:
     """Accept an external-only change into Markdown and refresh its base."""
 
     remote_body = remote.get("body_markdown")
     if not isinstance(remote_body, str):
         raise SyncError("external body is missing")
     document = parse_document(str(path))
-    _write_managed_public_body(
-        path, remote_body, document.implementation_note, format_public=True
+    public_body = (
+        _replace_level_one_section(document.public_body, "Description", remote_body)
+        if kind == "jira"
+        else remote_body
     )
-    _apply_remote_metadata(path, remote)
-    _write_base(repo_root, path, parse_document(str(path)).public_body)
+    _write_managed_public_body(
+        path, public_body, document.implementation_note, format_public=True
+    )
+    _apply_remote_metadata(path, remote, kind)
+    _write_base(repo_root, path, _sync_body(parse_document(str(path)), kind))
 
 
 def _write_conflict_markers(
-    path: Path, base_body: Optional[str], remote: Dict
+    path: Path, base_body: Optional[str], remote: Dict, kind: str
 ) -> None:
     """Write a three-way conflict into public Markdown while preserving notes."""
 
@@ -1431,11 +1486,16 @@ def _write_conflict_markers(
     document = parse_document(str(path))
     merged, conflict = three_way_merge(
         canonical_sync_body(base_body if base_body is not None else document.public_body),
-        canonical_sync_body(document.public_body),
+        canonical_sync_body(_sync_body(document, kind)),
         canonical_sync_body(remote_body),
     )
     if not conflict:
         raise SyncError("sync conflict observation no longer contains two-sided changes")
+    merged_body = (
+        _replace_level_one_section(document.public_body, "Description", merged)
+        if kind == "jira"
+        else merged
+    )
     _write_managed_public_body(
-        path, merged, document.implementation_note, format_public=True
+        path, merged_body, document.implementation_note, format_public=True
     )
