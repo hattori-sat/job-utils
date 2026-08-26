@@ -63,7 +63,8 @@ The CLI prints one JSON object:
 
 The process exits with status 1 when one or more items are in `error`, or when
 Git is `remote_ahead` or `diverged`. The latest observation is the input to
-`sync plan`. An external-only change becomes an `import` action, a two-sided
-change becomes a `conflict` action, and a local-only change remains an external
-update. Use `--no-git-fetch` only when the Git remote is intentionally
-unavailable.
+`sync plan`. An external-only change becomes an `import` action. A two-sided
+change becomes a `merge` action when its line ranges do not overlap, and a
+`conflict` action only when different changes overlap. A local-only change
+remains an external update. Use `--no-git-fetch` only when the Git remote is
+intentionally unavailable.

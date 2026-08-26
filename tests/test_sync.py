@@ -12,7 +12,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from jobutils.cli import main
-from jobutils.markdown.normalize import markdown_to_storage, parse_document
+from jobutils.markdown.normalize import (
+    canonical_sync_body,
+    markdown_to_storage,
+    parse_document,
+)
 from jobutils.sync.adapters import MemoryAdapter
 from jobutils.sync.engine import (
     SyncError,
@@ -1197,6 +1201,55 @@ Objective.
             with self.subTest(expected=expected):
                 self.assertEqual(classify_drift(base, local, remote), expected)
 
+    def test_classify_drift_ignores_authoring_blank_line_spacing(self):
+        self.assertEqual(
+            classify_drift("# Guide\n\nBody\n", "# Guide\n\n\n\nBody\n", "# Guide\n\nBody\n"),
+            "clean",
+        )
+
+    def test_sync_normalization_preserves_blank_lines_inside_code(self):
+        body = "# Guide\n\n\n\n```cpp\nfirst\n\nsecond\n```\n"
+        self.assertIn("first\n\nsecond", canonical_sync_body(body))
+
+    def test_non_overlapping_two_sided_changes_are_merged_and_published(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\ngtd_id: doc-1\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\n\n\n"
+            "Base first\n\n\n\nBase second\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        record = next(iter(adapter.records.values()))
+        current = parse_document(str(path)).public_body
+        record["payload"]["storage_body"] = markdown_to_storage(
+            current.replace("\n\n\n\n", "\n\n")
+        )
+        remote_body = current.replace("Base second", "Remote second")
+        record["payload"]["storage_body"] = markdown_to_storage(
+            remote_body.replace("\n\n\n\n", "\n\n")
+        )
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("Base first", "Local first"),
+            encoding="utf-8",
+        )
+
+        check(self.repo, adapter)
+        plan = create_plan(self.repo)
+
+        self.assertEqual(plan["actions"][0]["action"], "merge")
+        apply_plan(self.repo, plan, adapter)
+
+        updated = path.read_text(encoding="utf-8")
+        self.assertIn("Local first", updated)
+        self.assertIn("Remote second", updated)
+        self.assertIn("# Guide\n\n\n\nLocal first", updated)
+        fetched = adapter.fetch("confluence", next(iter(adapter.records)))
+        self.assertIn("Local first", fetched["body_markdown"])
+        self.assertIn("Remote second", fetched["body_markdown"])
+
     def test_check_reports_external_change_without_mutating_repository(self):
         path = self.repo / "documents" / "guide.md"
         path.write_text(
@@ -1363,6 +1416,50 @@ Objective.
         merged = path.read_text(encoding="utf-8")
         self.assertIn("<<<<<<< local", merged)
         self.assertIn(">>>>>>> external", merged)
+
+    def test_resolved_conflict_is_published_as_update(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote\n"
+        )
+        check(self.repo, adapter)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("# Guide\n\nBase", "# Guide\n\nLocal"),
+            encoding="utf-8",
+        )
+        conflict_plan = create_plan(self.repo)
+        with self.assertRaisesRegex(SyncError, "conflict"):
+            apply_plan(self.repo, conflict_plan, adapter)
+
+        conflict_text = path.read_text(encoding="utf-8")
+        path.write_text(
+            conflict_text[: conflict_text.index("<<<<<<< local")]
+            + "# Guide\n\nResolved\n",
+            encoding="utf-8",
+        )
+
+        check(self.repo, adapter)
+        resolved_plan = create_plan(self.repo)
+        self.assertEqual(resolved_plan["actions"][0]["action"], "update")
+        apply_plan(self.repo, resolved_plan, adapter)
+
+        self.assertIn(
+            "Resolved",
+            adapter.fetch("confluence", "MEM-1")["body_markdown"],
+        )
+        self.assertFalse(
+            any(
+                (self.repo / ".jobutils" / "sync" / "conflicts").glob("*.json")
+            )
+        )
 
     def test_check_isolates_fetch_errors_and_reports_missing_base(self):
         first = self.repo / "documents" / "first.md"

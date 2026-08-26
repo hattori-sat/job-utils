@@ -14,10 +14,12 @@ from urllib.parse import urlparse
 from jobutils.gtd import frontmatter
 from jobutils.gitops import GitOperationError, fetch as git_fetch
 from jobutils.markdown.normalize import (
+    canonical_sync_body,
     markdown_to_jira_wiki,
     markdown_to_storage,
     parse_document,
 )
+from jobutils.markdown.formatter import format_text
 from jobutils.metrics.events import append_event
 
 from .adapters import SyncAdapter
@@ -184,7 +186,7 @@ def _source_fingerprint(lines: List[str], public_body: str) -> str:
             if key not in _EXTERNAL_FRONTMATTER_KEYS:
                 metadata.append(line.rstrip())
     value = json.dumps(
-        {"metadata": metadata, "public_body": public_body},
+        {"metadata": metadata, "public_body": canonical_sync_body(public_body)},
         ensure_ascii=False,
         sort_keys=True,
     )
@@ -279,6 +281,22 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
     }
 
 
+def _observation_is_mergeable(document, observed: Dict) -> bool:
+    """Return whether both-sided changes can be merged without ambiguity."""
+
+    remote = observed.get("remote") or {}
+    base = observed.get("base_body")
+    remote_body = remote.get("body_markdown")
+    if not isinstance(base, str) or not isinstance(remote_body, str):
+        return False
+    _, conflict = three_way_merge(
+        canonical_sync_body(base),
+        canonical_sync_body(document.public_body),
+        canonical_sync_body(remote_body),
+    )
+    return not conflict
+
+
 def create_plan(
     repo_root: Path, observations: Optional[Dict[str, object]] = None
 ) -> Dict:
@@ -348,14 +366,28 @@ def create_plan(
                     )
                 )
             if observed and observed.get("state") == "conflict":
-                operation = "conflict"
-                blocked_reason = "local and external content both changed"
+                if _conflict_resolution_is_ready(
+                    repo_root,
+                    path,
+                    observed,
+                ):
+                    operation = "update"
+                elif _observation_is_mergeable(document, observed):
+                    operation = "merge"
+                else:
+                    operation = "conflict"
+                    blocked_reason = "local and external content overlap"
             elif observed and observed.get("state") == "external_changed":
-                if document.public_body == observed.get("local_public_body"):
+                if canonical_sync_body(document.public_body) == observed.get(
+                    "local_public_body"
+                ):
                     operation = "import"
                 else:
                     operation = "conflict"
-                    blocked_reason = "local content changed after sync check"
+                    if _observation_is_mergeable(document, observed):
+                        operation = "merge"
+                    else:
+                        blocked_reason = "local content changed after sync check"
             elif observed and observed.get("state") in ("clean", "converged"):
                 continue
             source_fingerprint = _source_fingerprint(
@@ -371,7 +403,8 @@ def create_plan(
                 operation == "update"
                 and not document.metadata.get("sync_hash")
                 and base_file.is_file()
-                and base_file.read_text(encoding="utf-8") == document.public_body
+                and canonical_sync_body(base_file.read_text(encoding="utf-8"))
+                == canonical_sync_body(document.public_body)
             ):
                 continue
         action = {
@@ -537,7 +570,13 @@ def _is_valid_plan(plan: object) -> bool:
             return False
         if not isinstance(action.get("action_id"), str) or not action["action_id"]:
             return False
-        if action.get("action") not in ("create", "update", "import", "conflict"):
+        if action.get("action") not in (
+            "create",
+            "update",
+            "import",
+            "merge",
+            "conflict",
+        ):
             return False
         if action.get("kind") not in ("jira", "confluence"):
             return False
@@ -557,7 +596,7 @@ def _is_valid_plan(plan: object) -> bool:
             )
             if not valid_parent:
                 return False
-        if action["action"] in ("update", "import", "conflict") and not action.get(
+        if action["action"] in ("update", "import", "merge", "conflict") and not action.get(
             "external_id"
         ):
             return False
@@ -736,15 +775,21 @@ def _replace_level_one_section(body: str, heading: str, content: str) -> str:
     """Replace or append one public level-one Markdown section."""
 
     heading_pattern = re.compile(
-        r"(?m)^#\s+{}\s*$".format(re.escape(heading))
+        r"(?m)^#\s+{}[ \t]*$".format(re.escape(heading))
     )
     match = heading_pattern.search(body)
     replacement = "# {}\n\n{}\n".format(heading, content.strip())
     if not match:
         return body.rstrip() + "\n\n" + replacement
-    next_heading = re.search(r"(?m)^#\s+.+?\s*$", body[match.end() :])
+    next_heading = re.search(r"(?m)^#\s+.+?[ \t]*$", body[match.end() :])
     end = match.end() + next_heading.start() if next_heading else len(body)
-    return body[: match.start()] + replacement + body[end:]
+    section = body[match.end() : end]
+    leading = re.match(r"\n*", section).group(0)
+    trailing = re.search(r"\n*$", section).group(0)
+    preserved = "# {}{}{}{}".format(
+        heading, leading, content.strip("\n"), trailing
+    )
+    return body[: match.start()] + preserved + body[end:]
 
 
 def _materialize_external_reference(path: Path, kind: str, result: Dict) -> None:
@@ -783,30 +828,7 @@ def _materialize_external_reference(path: Path, kind: str, result: Dict) -> None
     public_body = _replace_level_one_section(
         document.public_body, "References", "\n".join(updated)
     )
-    body = public_body.rstrip() + "\n"
-    if document.implementation_note.strip():
-        body += "\n# Implementation Note\n\n{}\n".format(
-            document.implementation_note.strip()
-        )
-
-    source_lines = path.read_text(encoding="utf-8").splitlines()
-    location = frontmatter.bounds(source_lines)
-    if location is None:
-        raise SyncError("managed Markdown has no front matter: {}".format(path))
-    rendered = "\n".join(source_lines[: location[1] + 1]) + "\n\n" + body.lstrip()
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=".jobutils-reference-", dir=str(path.parent)
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(rendered)
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
+    _write_managed_public_body(path, public_body, document.implementation_note)
 
 
 def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
@@ -841,8 +863,8 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 observed.get("fetch_options") or {},
             )
             previous_remote = observed.get("remote") or {}
-            if current_remote.get("body_markdown") != previous_remote.get(
-                "body_markdown"
+            if canonical_sync_body(current_remote.get("body_markdown", "")) != canonical_sync_body(
+                previous_remote.get("body_markdown", "")
             ):
                 raise SyncError(
                     "external record changed since sync check for {}".format(
@@ -880,6 +902,11 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             _write_conflict_markers(
                 conflict_path, observed.get("base_body"), observed["remote"]
             )
+            _write_conflict_record(
+                repo_root,
+                conflict_path,
+                observed,
+            )
             append_event(
                 repo_root,
                 "sync_conflict",
@@ -911,7 +938,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                         action["path"]
                     )
                 )
-            if parse_document(str(path)).public_body != observed.get(
+            if canonical_sync_body(parse_document(str(path)).public_body) != observed.get(
                 "local_public_body"
             ):
                 raise SyncError(
@@ -941,7 +968,32 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 }
             )
             continue
-        payload = dict(action["payload"])
+        if action["action"] == "merge":
+            observed = observed_by_path.get(action["path"])
+            if not observed or not isinstance(observed.get("remote"), dict):
+                raise SyncError(
+                    "sync merge observation is stale for {}; run sync check again".format(
+                        action["path"]
+                    )
+                )
+            document = parse_document(str(path))
+            merged, conflict = three_way_merge(
+                canonical_sync_body(observed.get("base_body") or ""),
+                canonical_sync_body(document.public_body),
+                canonical_sync_body(observed["remote"].get("body_markdown", "")),
+            )
+            if conflict:
+                raise SyncError(
+                    "sync merge is no longer automatic for {}; run sync check again".format(
+                        action["path"]
+                    )
+                )
+            _write_managed_public_body(
+                path, merged, document.implementation_note, format_public=True
+            )
+            payload = _payload(repo_root, path, action["kind"])
+        else:
+            payload = dict(action["payload"])
         if action.get("parent_path"):
             parent_path = action["parent_path"]
             parent_id = created_external_ids.get(parent_path)
@@ -997,6 +1049,8 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
         if external_id:
             created_external_ids[action["path"]] = str(external_id)
         _write_base(repo_root, path, parse_document(str(path)).public_body)
+        if action["action"] == "update":
+            _clear_conflict_record(repo_root, path)
         append_event(
             repo_root,
             "sync_applied",
@@ -1025,6 +1079,9 @@ def classify_drift(
 ) -> str:
     """Classify local and external public bodies against the last base."""
 
+    base = canonical_sync_body(base) if base is not None else None
+    local = canonical_sync_body(local)
+    remote = canonical_sync_body(remote)
     if base is None:
         return "unknown"
     if local == remote:
@@ -1142,11 +1199,13 @@ def check(
                 raise SyncError("external body is missing")
             base_file = _base_path(repo_root, path)
             base = (
-                base_file.read_text(encoding="utf-8")
+                canonical_sync_body(base_file.read_text(encoding="utf-8"))
                 if base_file.is_file()
                 else None
             )
-            state = classify_drift(base, document.public_body, remote_body)
+            local_public_body = canonical_sync_body(document.public_body)
+            remote_public_body = canonical_sync_body(remote_body)
+            state = classify_drift(base, local_public_body, remote_public_body)
             items.append(
                 {
                     "path": relative_path,
@@ -1164,9 +1223,9 @@ def check(
                 "kind": kind,
                 "external_id": external_id,
                 "state": state,
-                "local_public_body": document.public_body,
+                "local_public_body": local_public_body,
                 "base_body": base,
-                "remote": remote,
+                "remote": dict(remote, body_markdown=remote_public_body),
                 "fetch_options": fetch_options,
             }
         except Exception as error:
@@ -1205,12 +1264,115 @@ def _base_path(repo_root: Path, path: Path) -> Path:
     return repo_root / ".jobutils" / "sync" / "bases" / (name + ".md")
 
 
+def _conflict_record_path(repo_root: Path, path: Path) -> Path:
+    """Return the local state path for the latest materialized conflict."""
+
+    name = hashlib.sha1(str(path.relative_to(repo_root)).encode("utf-8")).hexdigest()
+    return repo_root / ".jobutils" / "sync" / "conflicts" / (name + ".json")
+
+
+def _body_hash(body: object) -> Optional[str]:
+    """Return a stable digest for a synchronized public body."""
+
+    if not isinstance(body, str):
+        return None
+    return hashlib.sha256(canonical_sync_body(body).encode("utf-8")).hexdigest()
+
+
+def _write_conflict_record(repo_root: Path, path: Path, observed: Dict) -> None:
+    """Record that apply materialized markers for one checked observation."""
+
+    target = _conflict_record_path(repo_root, path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(
+            {
+                "path": str(path.relative_to(repo_root)).replace("\\", "/"),
+                "external_id": observed.get("external_id"),
+                "base_hash": _body_hash(observed.get("base_body")),
+                "remote_hash": _body_hash(
+                    (observed.get("remote") or {}).get("body_markdown")
+                ),
+                "created_at": datetime.utcnow().isoformat() + "Z",
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _clear_conflict_record(repo_root: Path, path: Path) -> None:
+    """Remove the materialized-conflict record after successful publication."""
+
+    try:
+        _conflict_record_path(repo_root, path).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _conflict_resolution_is_ready(
+    repo_root: Path,
+    path: Path,
+    observed: Dict,
+) -> bool:
+    """Return whether the user resolved markers from this exact observation."""
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        record = json.loads(
+            _conflict_record_path(repo_root, path).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return False
+    markers = ("<<<<<<< local", "=======", ">>>>>>> external")
+    return (
+        not any(marker in text for marker in markers)
+        and record.get("path") == str(path.relative_to(repo_root)).replace("\\", "/")
+        and record.get("external_id") == observed.get("external_id")
+        and record.get("base_hash") == _body_hash(observed.get("base_body"))
+        and record.get("remote_hash")
+        == _body_hash((observed.get("remote") or {}).get("body_markdown"))
+    )
+
+
 def _write_base(repo_root: Path, path: Path, body: str) -> None:
     """Store the public body used by the next three-way pull."""
 
     target = _base_path(repo_root, path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(body, encoding="utf-8")
+    target.write_text(canonical_sync_body(body), encoding="utf-8")
+
+
+def _write_managed_public_body(
+    path: Path,
+    public_body: str,
+    implementation_note: str,
+    format_public: bool = False,
+    header_lines: Optional[List[str]] = None,
+) -> None:
+    """Rewrite a managed body while retaining local-only notes and spacing."""
+
+    lines = header_lines or path.read_text(encoding="utf-8").splitlines()
+    closing = frontmatter.bounds(lines)
+    if closing is None:
+        raise SyncError("managed Markdown has no front matter: {}".format(path))
+    body = public_body.lstrip("\n")
+    if body and not body.endswith("\n"):
+        body += "\n"
+    if implementation_note:
+        if body and not body.endswith("\n\n"):
+            body += "\n"
+        body += "# Implementation Note"
+        body += implementation_note if implementation_note.startswith("\n") else "\n" + implementation_note
+    rendered = "\n".join(lines[: closing[1] + 1]) + "\n\n" + body
+    if format_public:
+        rendered = format_text(rendered)
+    elif not rendered.endswith("\n"):
+        rendered += "\n"
+    path.write_text(rendered, encoding="utf-8")
 
 
 def _apply_remote_metadata(path: Path, remote: Dict) -> None:
@@ -1236,17 +1398,8 @@ def _apply_remote_metadata(path: Path, remote: Dict) -> None:
         )
         changed = True
     if changed:
-        closing = frontmatter.bounds(lines)
-        if closing is None:
-            raise SyncError("managed Markdown has no front matter: {}".format(path))
-        suffix = document.implementation_note.rstrip("\n")
-        body_lines = body.rstrip("\n").splitlines()
-        if suffix:
-            body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
-        path.write_text(
-            "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
-            + "\n",
-            encoding="utf-8",
+        _write_managed_public_body(
+            path, body, document.implementation_note, header_lines=lines
         )
 
 
@@ -1257,18 +1410,8 @@ def _import_remote_record(repo_root: Path, path: Path, remote: Dict) -> None:
     if not isinstance(remote_body, str):
         raise SyncError("external body is missing")
     document = parse_document(str(path))
-    lines = path.read_text(encoding="utf-8").splitlines()
-    closing = frontmatter.bounds(lines)
-    if closing is None:
-        raise SyncError("managed Markdown has no front matter: {}".format(path))
-    body_lines = remote_body.rstrip("\n").splitlines()
-    suffix = document.implementation_note.rstrip("\n")
-    if suffix:
-        body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
-    path.write_text(
-        "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
-        + "\n",
-        encoding="utf-8",
+    _write_managed_public_body(
+        path, remote_body, document.implementation_note, format_public=True
     )
     _apply_remote_metadata(path, remote)
     _write_base(repo_root, path, parse_document(str(path)).public_body)
@@ -1284,22 +1427,12 @@ def _write_conflict_markers(
         raise SyncError("external body is missing")
     document = parse_document(str(path))
     merged, conflict = three_way_merge(
-        base_body if base_body is not None else document.public_body,
-        document.public_body,
-        remote_body,
+        canonical_sync_body(base_body if base_body is not None else document.public_body),
+        canonical_sync_body(document.public_body),
+        canonical_sync_body(remote_body),
     )
     if not conflict:
         raise SyncError("sync conflict observation no longer contains two-sided changes")
-    lines = path.read_text(encoding="utf-8").splitlines()
-    closing = frontmatter.bounds(lines)
-    if closing is None:
-        raise SyncError("managed Markdown has no front matter: {}".format(path))
-    body_lines = merged.rstrip("\n").splitlines()
-    suffix = document.implementation_note.rstrip("\n")
-    if suffix:
-        body_lines += ["", "# Implementation Note", ""] + suffix.splitlines()
-    path.write_text(
-        "\n".join(lines[: closing[1] + 1] + [""] + body_lines).rstrip("\n")
-        + "\n",
-        encoding="utf-8",
+    _write_managed_public_body(
+        path, merged, document.implementation_note, format_public=True
     )

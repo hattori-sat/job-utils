@@ -93,9 +93,13 @@ Then run:
 ```
 
 An external-only change becomes an import action. If both Markdown and the
-external record changed, apply writes conflict markers into the Markdown file
-and stops without an external write. Resolve the markers in Vim, save, run
-`:GtdSyncCheck` and `:GtdSyncPlan` again, then apply the reviewed plan.
+external record changed in separate ranges, the plan creates a `merge` action
+and apply publishes the combined result. Only overlapping, different changes
+write conflict markers into the Markdown file and stop without an external
+write. In Vim, remove the three marker lines, keep or edit the desired content,
+save, and run `:GtdSyncCheck`, `:GtdSyncPlan`, and `:GtdSyncApply` again. The
+recorded conflict fingerprint recognizes that explicit resolution and
+publishes the resulting Markdown.
 
 There is no separate push command in the normal workflow. `:GtdSyncApply`
 rechecks Git and the external record before writing, then commits once after

@@ -23,11 +23,11 @@ class MarkdownDocument:
     def section(self, heading: str) -> str:
         """Return the content under a level-one heading."""
 
-        pattern = re.compile(r"(?m)^#\s+{}\s*$".format(re.escape(heading)))
+        pattern = re.compile(r"(?m)^#\s+{}[ \t]*$".format(re.escape(heading)))
         match = pattern.search(self.public_body)
         if not match:
             return ""
-        next_heading = re.search(r"(?m)^#\s+.+?\s*$", self.public_body[match.end() :])
+        next_heading = re.search(r"(?m)^#\s+.+?[ \t]*$", self.public_body[match.end() :])
         end = (
             match.end() + next_heading.start()
             if next_heading
@@ -39,11 +39,13 @@ class MarkdownDocument:
 def split_implementation_note(body: str) -> Tuple[str, str]:
     """Separate the final local-only Implementation Note section."""
 
-    match = re.search(r"(?m)^#\s+Implementation Note\s*$", body)
+    match = re.search(r"(?m)^#\s+Implementation Note[ \t]*$", body)
     if not match:
-        return body.rstrip() + "\n", ""
-    public = body[: match.start()].rstrip() + "\n"
-    private = body[match.end() :].lstrip("\n").rstrip() + "\n"
+        return body.rstrip("\n") + "\n", ""
+    public = body[: match.start()]
+    if public and not public.endswith("\n"):
+        public += "\n"
+    private = body[match.end() :]
     return public, private
 
 
@@ -56,6 +58,39 @@ def canonical_body(body: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
     return "\n".join(lines) + "\n"
+
+
+def canonical_sync_body(body: str) -> str:
+    """Normalize insignificant blank-line differences for synchronization."""
+
+    lines = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    normalized: List[str] = []
+    previous_blank = False
+    in_fence = False
+    for line in lines:
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            normalized.append(line)
+            previous_blank = False
+            continue
+        if in_fence:
+            normalized.append(line)
+            previous_blank = False
+            continue
+        line = line.rstrip()
+        if not line:
+            if previous_blank:
+                continue
+            previous_blank = True
+            normalized.append("")
+            continue
+        previous_blank = False
+        normalized.append(line)
+    while normalized and not normalized[0]:
+        normalized.pop(0)
+    while normalized and not normalized[-1]:
+        normalized.pop()
+    return "\n".join(normalized) + ("\n" if normalized else "")
 
 
 def parse_document(path: str) -> MarkdownDocument:
