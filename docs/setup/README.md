@@ -39,11 +39,26 @@ contains the current non-ignored repository contents; review the selected path
 before setup. Setup never pushes. If setup starts with existing local changes,
 it does not auto-commit them. Vim swap files (`*.swp` and `*.swo`) are ignored
 by the managed GTD `.gitignore` block. Normal Vim use stores new swap files
-outside the GTD repository: `~/.vim/swap` on macOS/Ubuntu and
+outside the GTD repository: `~/.vim/swap` on macOS/Ubuntu, unless
+`XDG_STATE_HOME` is set, in which case `$XDG_STATE_HOME/vim/swap` is used; and
 `%LOCALAPPDATA%/vim/swap` on Windows. Swap recovery remains enabled.
 
 If setup is interrupted, run the same platform script again. It reuses the
 virtual environment and fills only missing configuration or registration.
+
+At the end of setup, the command prints the resolved GTD Markdown Repository
+path and the current paths/status of `gtd.md` and `docs.md`. Use these lines to
+confirm that setup connected the intended Markdown repository before starting
+Vim. The same information is also present in the JSON setup result as
+`gtd_repo`.
+
+For example:
+
+```text
+GTD Markdown Repository: /absolute/path/to/your-gtd-repository
+  gtd.md: /absolute/path/to/your-gtd-repository/gtd.md (present)
+  docs.md: /absolute/path/to/your-gtd-repository/docs.md (present)
+```
 
 ## Configuration
 

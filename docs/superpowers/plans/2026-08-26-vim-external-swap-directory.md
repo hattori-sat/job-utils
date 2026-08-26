@@ -46,5 +46,6 @@
 - Modify: `docs/superpowers/plans/2026-08-26-vim-external-swap-directory.md`
 
 - [x] Explain that swap remains enabled for recovery but is stored outside the data repository.
+- [x] Run the focused Vim tests; add coverage for `XDG_STATE_HOME`.
 - [ ] Run the full test suite, Vim tests, compile checks, and `git diff --check`.
 - [ ] Commit locally without push, PR, or merge.

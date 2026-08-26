@@ -206,6 +206,8 @@ class SetupWorkflowTests(unittest.TestCase):
             self.assertTrue(state.is_file())
             self.assertTrue(log.is_file())
             self.assertIn('"status": "completed"', state.read_text())
+            self.assertIn('"jira_field_discovery"', state.read_text())
+            self.assertIn('"status": "skipped"', state.read_text())
             self.assertNotIn("API_TOKEN", log.read_text())
 
     def test_setup_creates_initial_gtd_commit_for_uncommitted_repository(self):

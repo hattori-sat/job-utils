@@ -66,6 +66,10 @@
 
 - [x] Explain that setup auto-fills Summary and Description IDs and never overwrites manual configuration; Progress Comment remains manual.
 - [x] Explain the safe outcomes for missing permission, multiple matches, and no matching field.
+- [x] Record discovery outcomes (`skipped`, `ambiguous`, and related statuses)
+      in setup state instead of marking every non-error result completed.
+- [x] Keep CLI tests isolated from the developer's local `.env` and external
+      Jira credentials.
 - [ ] Run the full test suite, compile checks, and `git diff --check`.
 - [ ] Scan the staged diff for credentials and personal Atlassian values.
 - [ ] Commit locally on the current `codex/*` branch; do not push, create a PR, or merge.

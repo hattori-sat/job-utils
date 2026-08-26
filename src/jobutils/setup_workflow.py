@@ -747,7 +747,10 @@ def _run_setup_step(state_path: Path, step: str, action: Callable[[], object]) -
     except (OSError, SetupError, ValueError) as error:
         _record_step(state_path, step, "failed", str(error))
         raise
-    _record_step(state_path, step, "completed")
+    status = "completed"
+    if isinstance(result, dict) and isinstance(result.get("status"), str):
+        status = result["status"]
+    _record_step(state_path, step, status)
     return result
 
 
