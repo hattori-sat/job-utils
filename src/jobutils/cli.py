@@ -33,7 +33,11 @@ from .metrics.reports import write_reports
 from .markdown.images import ClipboardError, paste_clipboard_image
 from .markdown.formatter import FormatError, format_file
 from .setup_workflow import SetupError, run_setup
-from .sync.adapters import AtlassianHttpAdapter, MemoryAdapter
+from .sync.adapters import (
+    AtlassianHttpAdapter,
+    ConfluenceDataCenterUploadAdapter,
+    MemoryAdapter,
+)
 from .sync.engine import (
     SyncError,
     apply_plan,
@@ -121,7 +125,9 @@ def _parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--repo", default=".")
     apply_parser.add_argument("--plan", required=True)
     apply_parser.add_argument(
-        "--adapter", choices=("memory", "atlassian"), default="memory"
+        "--adapter",
+        choices=("memory", "atlassian", "confluence-datacenter"),
+        default="memory",
     )
     apply_parser.add_argument(
         "--git-sync",
@@ -345,11 +351,19 @@ def main(argv: Optional[List[str]] = None) -> int:
             git_sync = (
                 args.git_sync
                 if args.git_sync is not None
-                else args.adapter == "atlassian"
+                else args.adapter in ("atlassian", "confluence-datacenter")
             )
             plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
             if args.adapter == "memory":
                 adapter = MemoryAdapter()
+            elif args.adapter == "confluence-datacenter":
+                adapter = ConfluenceDataCenterUploadAdapter(
+                    {
+                        "confluence_base_url": os.environ.get(
+                            "CONFLUENCE_BASE_URL", ""
+                        )
+                    }
+                )
             else:
                 adapter = AtlassianHttpAdapter(
                     {

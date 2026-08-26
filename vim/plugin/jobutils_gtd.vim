@@ -17,6 +17,7 @@ command! GtdReview call jobutils#gtd#review()
 command! GtdSyncUpdate call jobutils#gtd#sync_update()
 command! GtdSyncPlan call jobutils#gtd#sync_plan()
 command! -nargs=? GtdSyncApply call jobutils#gtd#sync_apply(<q-args>)
+command! -nargs=? GtdSyncApplyDataCenter call jobutils#gtd#sync_apply_datacenter(<q-args>)
 command! GtdSyncStatus call jobutils#gtd#sync_status()
 command! -nargs=? GtdSyncRebind call jobutils#gtd#sync_rebind(<q-args>)
 command! GtdSyncCheck call jobutils#gtd#sync_check()
@@ -56,6 +57,8 @@ cnoreabbrev <expr> gtdsyncplan
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncplan' ? 'GtdSyncPlan' : 'gtdsyncplan'
 cnoreabbrev <expr> gtdsyncapply
       \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdsyncapply\%([[:space:]]\|$\)' ? 'GtdSyncApply' : 'gtdsyncapply'
+cnoreabbrev <expr> gtdsyncapplydatacenter
+      \ getcmdtype() ==# ':' && getcmdline() =~# '^gtdsyncapplydatacenter\%([[:space:]]\|$\)' ? 'GtdSyncApplyDataCenter' : 'gtdsyncapplydatacenter'
 cnoreabbrev <expr> gtdsyncstatus
       \ getcmdtype() ==# ':' && getcmdline() ==# 'gtdsyncstatus' ? 'GtdSyncStatus' : 'gtdsyncstatus'
 cnoreabbrev <expr> gtdsyncrebind

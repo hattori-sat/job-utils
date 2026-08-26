@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 from urllib.error import HTTPError
 from urllib import request
+from urllib.parse import quote
 
 from jobutils.markdown.normalize import (
     adf_to_markdown,
@@ -439,3 +440,103 @@ class AtlassianHttpAdapter(SyncAdapter):
             "version": result.get("version", {}).get("number"),
             "parent_id": result.get("parentId"),
         }
+
+
+class ConfluenceDataCenterUploadAdapter(AtlassianHttpAdapter):
+    """Upload-only adapter for the Confluence Data Center content API."""
+
+    def _ensure_confluence(self, kind: str) -> None:
+        if kind != "confluence":
+            raise RuntimeError(
+                "Confluence Data Center adapter supports Confluence uploads only"
+            )
+
+    def _page_url(self, result: Dict, page_id: str) -> str:
+        links = result.get("_links") or {}
+        webui = links.get("webui")
+        if isinstance(webui, str) and webui:
+            if webui.startswith("http://") or webui.startswith("https://"):
+                return webui
+            return self.config["confluence_base_url"].rstrip("/") + "/" + webui.lstrip(
+                "/"
+            )
+        return self.config["confluence_base_url"].rstrip(
+            "/"
+        ) + "/pages/viewpage.action?pageId=" + quote(str(page_id), safe="")
+
+    def _page_body(self, payload: Dict, page_id: Optional[str] = None) -> Dict:
+        space_key = payload.get("space_key")
+        if not space_key:
+            raise RuntimeError(
+                "Confluence Data Center upload requires confluence_space_key"
+            )
+        body = {
+            "type": "page",
+            "title": payload["title"],
+            "space": {"key": space_key},
+            "body": {
+                "storage": {
+                    "value": payload["storage_body"],
+                    "representation": "storage",
+                }
+            },
+        }
+        if page_id is None:
+            parent_id = payload.get("parent_id")
+            if parent_id:
+                body["ancestors"] = [{"id": str(parent_id)}]
+        else:
+            body["id"] = str(page_id)
+            body["version"] = {"number": int(payload.get("version") or 0) + 1}
+        return body
+
+    def create(self, kind: str, payload: Dict) -> Dict:
+        self._ensure_confluence(kind)
+        result = self._request(
+            self.config["confluence_base_url"],
+            "/rest/api/content",
+            "CONFLUENCE_EMAIL",
+            "CONFLUENCE_API_TOKEN",
+            "POST",
+            self._page_body(payload),
+            auth_type_key="CONFLUENCE_AUTH_TYPE",
+            service="confluence-datacenter",
+        )
+        page_id = result.get("id")
+        if not page_id:
+            raise RuntimeError("Confluence Data Center create response did not include page id")
+        page_id = str(page_id)
+        return {
+            "id": page_id,
+            "key": None,
+            "url": self._page_url(result, page_id),
+            "version": (result.get("version") or {}).get("number", 1),
+        }
+
+    def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
+        self._ensure_confluence(kind)
+        page_id = str(external_id)
+        self._request(
+            self.config["confluence_base_url"],
+            "/rest/api/content/" + page_id,
+            "CONFLUENCE_EMAIL",
+            "CONFLUENCE_API_TOKEN",
+            "PUT",
+            self._page_body(payload, page_id),
+            auth_type_key="CONFLUENCE_AUTH_TYPE",
+            service="confluence-datacenter",
+        )
+        return {
+            "id": page_id,
+            "key": None,
+            "url": payload.get("confluence_url")
+            or self.config["confluence_base_url"].rstrip("/")
+            + "/pages/viewpage.action?pageId="
+            + quote(page_id, safe=""),
+            "version": int(payload.get("version") or 0) + 1,
+        }
+
+    def fetch(
+        self, kind: str, external_id: str, options: Optional[Dict] = None
+    ) -> Dict:
+        raise RuntimeError("Confluence Data Center adapter is upload-only")

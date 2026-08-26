@@ -9,7 +9,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from jobutils.sync.adapters import AtlassianHttpAdapter
+from jobutils.sync.adapters import (
+    AtlassianHttpAdapter,
+    ConfluenceDataCenterUploadAdapter,
+)
 
 
 class _Response:
@@ -296,6 +299,55 @@ class AtlassianAdapterTests(unittest.TestCase):
         args, kwargs = request_mock.call_args
         self.assertEqual(args[1], "/wiki/api/v2/pages")
         self.assertEqual(kwargs["auth_type_key"], "CONFLUENCE_AUTH_TYPE")
+
+    def test_confluence_datacenter_create_uses_content_endpoint_and_ancestor(self):
+        adapter = ConfluenceDataCenterUploadAdapter(self.adapter.config)
+        payload = {
+            "space_key": "DOC",
+            "title": "Guide",
+            "storage_body": "<p>Guide</p>",
+            "parent_id": "42",
+        }
+        with patch.object(
+            adapter,
+            "_request",
+            return_value={
+                "id": "page-1",
+                "version": {"number": 1},
+                "_links": {"webui": "/pages/viewpage.action?pageId=page-1"},
+            },
+        ) as request_mock:
+            result = adapter.create("confluence", payload)
+
+        self.assertEqual(result["id"], "page-1")
+        args, kwargs = request_mock.call_args
+        self.assertEqual(args[1], "/rest/api/content")
+        self.assertEqual(args[5]["space"], {"key": "DOC"})
+        self.assertEqual(args[5]["ancestors"], [{"id": "42"}])
+        self.assertEqual(kwargs["auth_type_key"], "CONFLUENCE_AUTH_TYPE")
+
+    def test_confluence_datacenter_is_upload_only(self):
+        adapter = ConfluenceDataCenterUploadAdapter(self.adapter.config)
+
+        with self.assertRaisesRegex(RuntimeError, "upload-only"):
+            adapter.fetch("confluence", "page-1")
+
+    def test_confluence_datacenter_update_increments_version(self):
+        adapter = ConfluenceDataCenterUploadAdapter(self.adapter.config)
+        payload = {
+            "space_key": "DOC",
+            "title": "Guide",
+            "storage_body": "<p>Updated</p>",
+            "version": 4,
+            "confluence_url": "https://confluence.example/pages/viewpage.action?pageId=42",
+        }
+        with patch.object(adapter, "_request", return_value={}) as request_mock:
+            result = adapter.update("confluence", "42", payload)
+
+        self.assertEqual(result["version"], 5)
+        args = request_mock.call_args.args
+        self.assertEqual(args[1], "/rest/api/content/42")
+        self.assertEqual(args[5]["version"], {"number": 5})
 
 
 if __name__ == "__main__":

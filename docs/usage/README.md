@@ -71,6 +71,21 @@ Apply updates Jira or Confluence, writes returned IDs and URLs to front
 matter, commits the Markdown and synchronization state, and pushes the commit
 to the configured Git remote. Implementation Notes remain local.
 
+For Confluence Data Center upload-only publication, create a plan normally and
+apply it with `--adapter confluence-datacenter`:
+
+```text
+jobutils sync plan --repo /path/to/gtd
+jobutils sync apply --repo /path/to/gtd --plan .jobutils/sync/plans/PLAN.json \
+  --adapter confluence-datacenter
+```
+
+This adapter uses the Data Center Content REST API (`/rest/api/content`),
+requires `CONFLUENCE_SPACE_KEY`, and supports page creation and updates with an
+optional parent page ID. It does not fetch or import Data Center pages; use the
+existing `atlassian` adapter for Cloud check/import workflows. From Vim, the
+equivalent command is `:GtdSyncApplyDataCenter [plan]`.
+
 ## Synchronize before editing
 
 The `jobutils-vim` launcher updates Git before opening Vim. If another device
