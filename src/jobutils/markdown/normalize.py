@@ -204,7 +204,7 @@ def _markdown_table_cell(value: str) -> str:
 def _escape_markdown_text(value: str) -> str:
     """Escape inline delimiters in text imported from an external system."""
 
-    escaped_html = html.escape(value, quote=False)
+    escaped_html = value.replace("<", "&lt;").replace(">", "&gt;")
     return re.sub(r"([\\\[\]\(\)!])", r"\\\1", escaped_html)
 
 
@@ -430,9 +430,10 @@ def markdown_to_storage(body: str) -> str:
                 if language
                 else ""
             )
+            cdata_body = code.replace("]]>", "]]]]><![CDATA[>")
             output.append(
-                '<ac:structured-macro ac:name="code">{}<ac:plain-text-body>{}</ac:plain-text-body></ac:structured-macro>'.format(
-                    parameter, html.escape(code)
+                '<ac:structured-macro ac:name="code">{}<ac:plain-text-body><![CDATA[{}]]></ac:plain-text-body></ac:structured-macro>'.format(
+                    parameter, cdata_body
                 )
             )
         elif kind == "macro":

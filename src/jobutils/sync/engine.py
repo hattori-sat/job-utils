@@ -15,9 +15,11 @@ from jobutils.gtd import frontmatter
 from jobutils.gitops import GitOperationError, fetch as git_fetch
 from jobutils.markdown.normalize import (
     canonical_sync_body,
+    jira_wiki_to_markdown,
     markdown_to_jira_wiki,
     markdown_to_storage,
     parse_document,
+    storage_to_markdown,
 )
 from jobutils.markdown.formatter import format_text
 from jobutils.metrics.events import append_event
@@ -237,7 +239,129 @@ def _sync_body(document, kind: str) -> str:
 
     if kind == "jira":
         return document.section("Description")
-    return document.public_body
+    return _sync_projection(
+        document.public_body,
+        kind,
+        document.metadata.get("confluence_page_id"),
+        document.metadata.get("confluence_url"),
+    )
+
+
+def _comparison_body(
+    document,
+    kind: str,
+    external_id: Optional[str] = None,
+    external_url: Optional[str] = None,
+) -> str:
+    """Return the local body in the representation used for drift checks."""
+
+    return _sync_projection(
+        _sync_body(document, kind), kind, external_id, external_url
+    )
+
+
+def _sync_projection(
+    body: Optional[str],
+    kind: str,
+    external_id: Optional[str] = None,
+    external_url: Optional[str] = None,
+) -> Optional[str]:
+    """Project text through the external representation used for comparison."""
+
+    if body is None:
+        return None
+    body = _without_generated_external_reference(
+        body, kind, external_id, external_url
+    )
+    if kind == "confluence":
+        body = storage_to_markdown(markdown_to_storage(body))
+    elif kind == "jira":
+        body = jira_wiki_to_markdown(markdown_to_jira_wiki(body))
+    return canonical_sync_body(body)
+
+
+def _without_generated_external_reference(
+    body: str,
+    kind: str,
+    external_id: Optional[str],
+    external_url: Optional[str] = None,
+) -> str:
+    """Exclude the self-link added locally after an external create.
+
+    A newly created Confluence page cannot contain its own link because the
+    page ID is not known until the create response arrives. The local apply
+    path adds that link afterward, so comparisons must treat it as generated
+    metadata rather than as page content. Other reference links remain part
+    of the synchronized body.
+    """
+
+    if kind != "confluence" or not external_id:
+        return body
+    reference_pattern = re.compile(
+        r"^\s*-\s*Confluence:\s*\[{}\]\((.*)\)\s*$".format(
+            re.escape(str(external_id))
+        )
+    )
+    lines = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    start = None
+    end = None
+    in_fence = False
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if not in_fence and re.match(r"^#\s+References\s*$", line):
+            start = index
+            break
+    if start is None:
+        return body
+    for index in range(start + 1, len(lines)):
+        if re.match(r"^#\s+.+$", lines[index]):
+            end = index
+            break
+    if end is None:
+        end = len(lines)
+    section = lines[start + 1 : end]
+    remaining = []
+    in_fence = False
+    for line in section:
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            remaining.append(line)
+            continue
+        match = reference_pattern.match(line)
+        if (
+            match
+            and not in_fence
+            and _matches_generated_external_url(
+                match.group(1), external_url, str(external_id)
+            )
+        ):
+            continue
+        remaining.append(line)
+    if any(line.strip() for line in remaining):
+        lines[start + 1 : end] = remaining
+    else:
+        del lines[start:end]
+    result = "\n".join(lines)
+    return result + ("\n" if body.endswith(("\n", "\r")) else "")
+
+
+def _matches_generated_external_url(
+    candidate: str, expected: Optional[str], external_id: str
+) -> bool:
+    """Return whether a reference URL is a generated page self-link."""
+
+    if not expected or candidate == expected:
+        return bool(expected)
+    candidate_url = urlparse(candidate)
+    expected_url = urlparse(expected)
+    expected_suffix = "/pages/{}".format(external_id)
+    return (
+        candidate_url.scheme == expected_url.scheme
+        and candidate_url.netloc == expected_url.netloc
+        and candidate_url.path.rstrip("/").endswith(expected_suffix)
+    )
 
 
 def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
@@ -302,9 +426,8 @@ def _payload(repo_root: Path, path: Path, kind: str) -> Dict:
 def _observation_is_mergeable(document, observed: Dict) -> bool:
     """Return whether both-sided changes can be merged without ambiguity."""
 
-    remote = observed.get("remote") or {}
     base = observed.get("base_body")
-    remote_body = remote.get("body_markdown")
+    remote_body = _observed_comparison_body(observed)
     if not isinstance(base, str) or not isinstance(remote_body, str):
         return False
     kind = observed.get("kind") or (
@@ -312,9 +435,20 @@ def _observation_is_mergeable(document, observed: Dict) -> bool:
         if _bool(document.metadata.get("publish_jira"))
         else "confluence"
     )
+    external_id = observed.get("external_id")
+    base = _sync_projection(
+        base, kind, external_id, document.metadata.get("confluence_url")
+    )
     _, conflict = three_way_merge(
         canonical_sync_body(base),
-        canonical_sync_body(_sync_body(document, kind)),
+        canonical_sync_body(
+            _comparison_body(
+                document,
+                kind,
+                external_id,
+                document.metadata.get("confluence_url"),
+            )
+        ),
         canonical_sync_body(remote_body),
     )
     return not conflict
@@ -416,7 +550,12 @@ def create_plan(
                     operation = "conflict"
                     blocked_reason = "local and external content overlap"
             elif observed and observed.get("state") == "external_changed":
-                if canonical_sync_body(_sync_body(document, kind)) == observed.get(
+                if _comparison_body(
+                    document,
+                    kind,
+                    external_id,
+                    document.metadata.get("confluence_url"),
+                ) == observed.get(
                     "local_public_body"
                 ):
                     operation = "import"
@@ -442,7 +581,14 @@ def create_plan(
                 and not document.metadata.get("sync_hash")
                 and base_file.is_file()
                 and canonical_sync_body(base_file.read_text(encoding="utf-8"))
-                == canonical_sync_body(_sync_body(document, kind))
+                == canonical_sync_body(
+                    _comparison_body(
+                        document,
+                        kind,
+                        external_id,
+                        document.metadata.get("confluence_url"),
+                    )
+                )
             ):
                 continue
         action = {
@@ -876,6 +1022,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
     if not _is_valid_plan(plan):
         raise SyncError("sync plan has invalid structure")
     observed_by_path = {}
+    current_remote_by_path = {}
     if plan.get("observation_id"):
         observation = _load_observation(repo_root)
         if not observation or observation.get("observation_id") != plan.get(
@@ -905,15 +1052,64 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 observed["external_id"],
                 observed.get("fetch_options") or {},
             )
+            current_remote_by_path[observed["path"]] = current_remote
             previous_remote = observed.get("remote") or {}
-            if canonical_sync_body(current_remote.get("body_markdown", "")) != canonical_sync_body(
-                previous_remote.get("body_markdown", "")
-            ):
+            previous_comparison_body = observed.get("comparison_body")
+            if not isinstance(previous_comparison_body, str):
+                previous_comparison_body = _sync_projection(
+                    previous_remote.get("body_markdown"),
+                    observed["kind"],
+                    observed["external_id"],
+                    previous_remote.get("url"),
+                )
+            if _sync_projection(
+                current_remote.get("body_markdown", ""),
+                observed["kind"],
+                observed["external_id"],
+                current_remote.get("url"),
+            ) != previous_comparison_body:
                 raise SyncError(
                     "external record changed since sync check for {}".format(
                         observed["path"]
                     )
                 )
+    for action in plan["actions"]:
+        if action.get("action") not in ("update", "merge"):
+            continue
+        if action.get("kind") != "confluence" or not action.get("external_id"):
+            continue
+        upload_only = getattr(adapter, "upload_only", False) or action.get(
+            "kind"
+        ) in getattr(adapter, "upload_only_kinds", ())
+        if upload_only or action["path"] in current_remote_by_path:
+            continue
+        path = _managed_action_path(repo_root, action["path"])
+        document = parse_document(str(path))
+        current_remote = adapter.fetch("confluence", action["external_id"], {})
+        current_remote_by_path[action["path"]] = current_remote
+        base_file = _base_path(repo_root, path)
+        if not base_file.is_file():
+            raise SyncError(
+                "Confluence update requires a fresh sync check or base snapshot"
+            )
+        base_body = _sync_projection(
+            base_file.read_text(encoding="utf-8"),
+            "confluence",
+            action["external_id"],
+            document.metadata.get("confluence_url"),
+        )
+        current_body = _sync_projection(
+            current_remote.get("body_markdown", ""),
+            "confluence",
+            action["external_id"],
+            current_remote.get("url"),
+        )
+        if current_body != base_body:
+            raise SyncError(
+                "external record changed since sync base for {}".format(
+                    action["path"]
+                )
+            )
     conflicts = [
         action
         for action in plan["actions"]
@@ -985,7 +1181,12 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                     )
                 )
             document = parse_document(str(path))
-            if canonical_sync_body(_sync_body(document, action["kind"])) != observed.get(
+            if _comparison_body(
+                document,
+                action["kind"],
+                action.get("external_id"),
+                document.metadata.get("confluence_url"),
+            ) != observed.get(
                 "local_public_body"
             ):
                 raise SyncError(
@@ -1026,8 +1227,18 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             document = parse_document(str(path))
             merged, conflict = three_way_merge(
                 canonical_sync_body(observed.get("base_body") or ""),
-                canonical_sync_body(_sync_body(document, action["kind"])),
-                canonical_sync_body(observed["remote"].get("body_markdown", "")),
+                canonical_sync_body(
+                    _comparison_body(
+                        document,
+                        action["kind"],
+                        action.get("external_id"),
+                        document.metadata.get("confluence_url"),
+                    )
+                ),
+                canonical_sync_body(
+                    observed.get("comparison_body")
+                    or observed["remote"].get("body_markdown", "")
+                ),
             )
             if conflict:
                 raise SyncError(
@@ -1069,6 +1280,32 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
             payload[
                 "parent_id" if action["kind"] == "confluence" else "parent_key"
             ] = parent_id
+        if (
+            action["kind"] == "confluence"
+            and action["action"] in ("update", "merge")
+            and not (
+                getattr(adapter, "upload_only", False)
+                or action["kind"] in getattr(adapter, "upload_only_kinds", ())
+            )
+        ):
+            current_remote = current_remote_by_path.get(action["path"])
+            if current_remote is None:
+                if not action.get("external_id"):
+                    raise SyncError(
+                        "Confluence update requires an external page ID"
+                    )
+                current_remote = adapter.fetch(
+                    action["kind"], action["external_id"], {}
+                )
+                current_remote_by_path[action["path"]] = current_remote
+            if isinstance(current_remote, dict) and isinstance(
+                current_remote.get("version"), int
+            ):
+                payload["version"] = current_remote["version"]
+            else:
+                raise SyncError(
+                    "Confluence update requires the current external version"
+                )
         try:
             if action["action"] == "create":
                 result = adapter.create(action["kind"], payload)
@@ -1259,9 +1496,19 @@ def check(
                 if base_file.is_file()
                 else None
             )
-            local_public_body = canonical_sync_body(_sync_body(document, kind))
-            remote_public_body = canonical_sync_body(remote_body)
+            local_public_body = _comparison_body(
+                document,
+                kind,
+                external_id,
+                document.metadata.get("confluence_url"),
+            )
+            remote_public_body = _sync_projection(
+                remote_body, kind, external_id, remote.get("url")
+            )
             base = _effective_base_body(document, kind, base, local_public_body)
+            base = _sync_projection(
+                base, kind, external_id, document.metadata.get("confluence_url")
+            )
             state = classify_drift(base, local_public_body, remote_public_body)
             if kind == "jira":
                 summary_changed = remote.get("title") is not None and _jira_summary(
@@ -1294,7 +1541,8 @@ def check(
                 "state": state,
                 "local_public_body": local_public_body,
                 "base_body": base,
-                "remote": dict(remote, body_markdown=remote_public_body),
+                "remote": dict(remote),
+                "comparison_body": remote_public_body,
                 "fetch_options": fetch_options,
             }
         except Exception as error:
@@ -1348,6 +1596,21 @@ def _body_hash(body: object) -> Optional[str]:
     return hashlib.sha256(canonical_sync_body(body).encode("utf-8")).hexdigest()
 
 
+def _observed_comparison_body(observed: Dict) -> Optional[str]:
+    """Return the normalized remote body recorded by one observation."""
+
+    comparison_body = observed.get("comparison_body")
+    if isinstance(comparison_body, str):
+        return comparison_body
+    remote = observed.get("remote") or {}
+    return _sync_projection(
+        remote.get("body_markdown"),
+        observed.get("kind") or "confluence",
+        observed.get("external_id"),
+        remote.get("url"),
+    )
+
+
 def _write_conflict_record(repo_root: Path, path: Path, observed: Dict) -> None:
     """Record that apply materialized markers for one checked observation."""
 
@@ -1359,9 +1622,7 @@ def _write_conflict_record(repo_root: Path, path: Path, observed: Dict) -> None:
                 "path": str(path.relative_to(repo_root)).replace("\\", "/"),
                 "external_id": observed.get("external_id"),
                 "base_hash": _body_hash(observed.get("base_body")),
-                "remote_hash": _body_hash(
-                    (observed.get("remote") or {}).get("body_markdown")
-                ),
+                "remote_hash": _body_hash(_observed_comparison_body(observed)),
                 "created_at": datetime.utcnow().isoformat() + "Z",
             },
             ensure_ascii=False,
@@ -1402,8 +1663,7 @@ def _conflict_resolution_is_ready(
         and record.get("path") == str(path.relative_to(repo_root)).replace("\\", "/")
         and record.get("external_id") == observed.get("external_id")
         and record.get("base_hash") == _body_hash(observed.get("base_body"))
-        and record.get("remote_hash")
-        == _body_hash((observed.get("remote") or {}).get("body_markdown"))
+        and record.get("remote_hash") == _body_hash(_observed_comparison_body(observed))
     )
 
 
@@ -1507,8 +1767,26 @@ def _write_conflict_markers(
     document = parse_document(str(path))
     merged, conflict = three_way_merge(
         canonical_sync_body(base_body if base_body is not None else document.public_body),
-        canonical_sync_body(_sync_body(document, kind)),
-        canonical_sync_body(remote_body),
+        canonical_sync_body(
+            _comparison_body(
+                document,
+                kind,
+                document.metadata.get(
+                    "jira_key" if kind == "jira" else "confluence_page_id"
+                ),
+                document.metadata.get("confluence_url"),
+            )
+        ),
+        canonical_sync_body(
+            _sync_projection(
+                remote_body,
+                kind,
+                document.metadata.get(
+                    "jira_key" if kind == "jira" else "confluence_page_id"
+                ),
+                remote.get("url"),
+            )
+        ),
     )
     if not conflict:
         raise SyncError("sync conflict observation no longer contains two-sided changes")

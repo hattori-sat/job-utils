@@ -24,6 +24,8 @@ from jobutils.sync.adapters import (
 )
 from jobutils.sync.engine import (
     SyncError,
+    _without_generated_external_reference,
+    _write_base,
     apply_plan,
     check,
     classify_drift,
@@ -457,6 +459,231 @@ Private content.
         apply_plan(self.repo, create_plan(self.repo), adapter)
 
         self.assertEqual(create_plan(self.repo)["actions"], [])
+
+    def test_confluence_create_self_reference_is_not_external_drift(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\nBody\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        result = check(self.repo, adapter)
+
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["items"][0]["state"], "clean")
+        self.assertIn("# References", path.read_text(encoding="utf-8"))
+
+    def test_confluence_soft_line_break_is_not_external_drift(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\n"
+            "A paragraph split\nacross lines.\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        result = check(self.repo, adapter)
+
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["items"][0]["state"], "clean")
+
+    def test_jira_soft_line_break_is_not_external_drift(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            "---\nkind: task\ntitle: Task\npublish_jira: true\n"
+            "jira_project: DEMO\n---\n\n# Summary\n\nTask\n\n"
+            "# Description\n\nA paragraph split\nacross lines.\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        result = check(self.repo, adapter)
+
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["items"][0]["state"], "clean")
+
+    def test_confluence_update_uses_latest_external_version(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\nBody\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["version"] = 4
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("Body", "Local update"),
+            encoding="utf-8",
+        )
+
+        check(self.repo, adapter)
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        self.assertIn("confluence_version: '5'", path.read_text(encoding="utf-8"))
+
+    def test_confluence_update_fetches_version_without_observation(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\nBody\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["version"] = 4
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("Body", "Local update"),
+            encoding="utf-8",
+        )
+
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        self.assertIn("confluence_version: '5'", path.read_text(encoding="utf-8"))
+
+    def test_confluence_update_without_observation_rejects_external_body_change(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\nBody\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nExternal change\n"
+        )
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("Body", "Local update"),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(SyncError, "external record changed since sync base"):
+            apply_plan(self.repo, create_plan(self.repo), adapter)
+
+    def test_confluence_missing_observation_item_is_preflighted(self):
+        first = self.repo / "documents" / "first.md"
+        first.write_text(
+            "---\nkind: document\ntitle: First\npublish_confluence: true\n"
+            "confluence_page_id: MEM-1\n---\n\n# First\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        adapter.records["MEM-1"] = {
+            "kind": "confluence",
+            "payload": {"title": "First", "storage_body": "<h1>First</h1>"},
+            "url": "https://memory.invalid/confluence/MEM-1",
+        }
+        _write_base(self.repo, first, "# First\n")
+        check(self.repo, adapter)
+
+        second = self.repo / "documents" / "second.md"
+        second.write_text(
+            "---\nkind: document\ntitle: Second\npublish_confluence: true\n"
+            "confluence_page_id: MEM-2\n---\n\n# Second\n\nLocal\n",
+            encoding="utf-8",
+        )
+        adapter.records["MEM-2"] = {
+            "kind": "confluence",
+            "payload": {
+                "title": "Second",
+                "storage_body": "<h1>Second</h1><p>External</p>",
+            },
+            "url": "https://memory.invalid/confluence/MEM-2",
+        }
+        _write_base(self.repo, second, "# Second\n\nBase\n")
+
+        plan = create_plan(self.repo)
+
+        with self.assertRaisesRegex(SyncError, "external record changed since sync base"):
+            apply_plan(self.repo, plan, adapter)
+
+    def test_confluence_datacenter_update_uses_stored_version_without_fetch(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_page_id: PAGE-1\nconfluence_parent_id: PARENT-1\n"
+            "confluence_version: 4\n---\n\n# Guide\n\nLocal\n",
+            encoding="utf-8",
+        )
+        adapter = JiraCloudConfluenceDataCenterAdapter(
+            {
+                "jira_base_url": "https://jira.example",
+                "confluence_base_url": "https://confluence.example",
+            }
+        )
+        plan = create_plan(self.repo)
+        with patch.object(adapter, "fetch", side_effect=AssertionError("fetch called")):
+            with patch.object(
+                adapter,
+                "update",
+                return_value={
+                    "id": "PAGE-1",
+                    "url": "https://confluence.example/pages/PAGE-1",
+                    "version": 5,
+                },
+            ) as update:
+                apply_plan(self.repo, plan, adapter)
+
+        self.assertEqual(update.call_args.args[2]["version"], 4)
+
+    def test_confluence_observation_keeps_raw_remote_and_comparison_projection(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\n"
+            "publish_confluence: true\nconfluence_space_id: space-1\n"
+            "confluence_space_key: DOC\n---\n\n# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = (
+            "<h1>Guide</h1><p>Base<br/>Remote</p>"
+        )
+
+        result = check(self.repo, adapter)
+        observed = result["items"][0]
+
+        self.assertEqual(observed["state"], "external_changed")
+        observation = json.loads(
+            (self.repo / ".jobutils/sync/observations/latest.json").read_text(
+                encoding="utf-8"
+            )
+        )["items"][0]
+        self.assertIn("Base\nRemote", observation["remote"]["body_markdown"])
+        self.assertIn("Base Remote", observation["comparison_body"])
+
+    def test_confluence_self_reference_filter_ignores_only_generated_links(self):
+        body = (
+            "# References\n\n"
+            "```markdown\n"
+            "- Confluence: [MEM-1](https://memory.invalid/confluence/MEM-1)\n"
+            "```\n\n"
+            "- Confluence: [MEM-1](https://other.invalid/pages/MEM-1)\n\n"
+            "- Confluence: [MEM-1](https://memory.invalid/confluence/MEM-1)\n"
+        )
+
+        result = _without_generated_external_reference(
+            body,
+            "confluence",
+            "MEM-1",
+            "https://memory.invalid/confluence/MEM-1",
+        )
+
+        self.assertIn("memory.invalid/confluence/MEM-1", result)
+        self.assertIn("other.invalid/pages/MEM-1", result)
+        self.assertEqual(result.count("memory.invalid/confluence/MEM-1"), 1)
 
     def test_apply_records_success_and_failure_events(self):
         path = self.repo / "documents" / "guide.md"
@@ -1582,6 +1809,48 @@ Local-only objective.
             "Resolved",
             adapter.fetch("confluence", "MEM-1")["body_markdown"],
         )
+        self.assertFalse(
+            any(
+                (self.repo / ".jobutils" / "sync" / "conflicts").glob("*.json")
+            )
+        )
+
+    def test_resolved_conflict_ignores_equivalent_remote_formatting(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_space_id: space-1\nconfluence_space_key: DOC\n---\n\n"
+            "# Guide\n\nBase\n",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["storage_body"] = markdown_to_storage(
+            "# Guide\n\nRemote text.\n"
+        )
+        check(self.repo, adapter)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("# Guide\n\nBase", "# Guide\n\nLocal"),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(SyncError, "conflict"):
+            apply_plan(self.repo, create_plan(self.repo), adapter)
+
+        conflict_text = path.read_text(encoding="utf-8")
+        path.write_text(
+            conflict_text[: conflict_text.index("<<<<<<< local")]
+            + "# Guide\n\nResolved\n",
+            encoding="utf-8",
+        )
+        adapter.records["MEM-1"]["payload"]["storage_body"] = (
+            "<h1>Guide</h1><p>Remote\ntext.</p>"
+        )
+
+        check(self.repo, adapter)
+        resolved_plan = create_plan(self.repo)
+
+        self.assertEqual(resolved_plan["actions"][0]["action"], "update")
+        apply_plan(self.repo, resolved_plan, adapter)
         self.assertFalse(
             any(
                 (self.repo / ".jobutils" / "sync" / "conflicts").glob("*.json")
