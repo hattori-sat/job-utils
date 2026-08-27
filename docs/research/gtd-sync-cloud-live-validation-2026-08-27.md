@@ -31,6 +31,7 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 | Initial Jira and Confluence create | Passed; Jira fixture `LIG-6`, Confluence fixture `211451905` |
 | Immediate check after create | Found and fixed a false Confluence drift caused by the generated self-reference |
 | Markdown-only Jira and Confluence update | Passed; both were detected as `local_changed` and updated |
+| Jira Summary-only Markdown update | Found and fixed a false `external_changed` classification; the Cloud Summary was updated and the final check was `clean` |
 | Vim task create, first apply, edit, and second apply | Passed; Jira Cloud test issue `LIG-7` was created, edited, updated, then returned to `clean` |
 | External-only Jira and Confluence update | Passed; both were imported from Cloud and returned to `clean` |
 | Same-range local/external conflict | Passed; both produced Git-style conflict markers and no Cloud write |
@@ -39,6 +40,7 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 | Unicode, ampersands, literal angle brackets, quotes, and code blocks | Passed; Cloud round-trip preserved content and represented literal tags as escaped Markdown |
 | Deletion API safety check | Passed; 2 temporary Confluence children created and 2 deleted |
 | Dirty Git worktree update guard | Passed; `sync update` stopped with `working tree must be clean before pull` |
+| Data Center-mode `sync check` | Passed; Confluence was reported as `upload_only` without GET, while Jira Cloud remained `clean` |
 
 ## Fixes made
 
@@ -61,14 +63,27 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 - Jira bodies are compared after the Markdown → Jira wiki → Markdown
   projection, so Cloud's soft line-wrap normalization does not become a false
   `external_changed` state after a Vim edit and re-apply.
-- Added regression tests for self-reference drift, soft line wrapping, and
-  latest-version updates.
+- Jira Summary changes are tracked independently from the Description body;
+  a local Summary-only edit is published instead of being imported back from
+  the unchanged Cloud issue. Existing files without the tracking value use
+  their source fingerprint as a backward-compatible fallback.
+- When both local and Cloud Summary values change, sync blocks the update and
+  materializes Git-style conflict markers in `# Summary`; the external value
+  is not overwritten.
+- Data Center-mode checks now route through the hybrid adapter and skip the
+  unsupported Confluence GET while continuing to check Jira Cloud.
+- Added regression tests for self-reference drift, soft line wrapping,
+  latest-version updates, and Jira Summary-only local/external/conflicting
+  changes.
 
 ## Verification evidence
 
-- Full local suite: 219 tests, all passed.
+- Full local suite: 223 tests, all passed.
 - Live final `sync check`: Jira and Confluence both `clean`, error count 0.
-- Live final `sync plan`: 0 actions.
+- Live Summary-only Jira update: `check` detected `local_changed`, `plan`
+  generated one Jira `update` action, Cloud update returned successfully, and
+  the following `check` returned `clean`.
+- Live restored-fixture `sync plan`: 0 actions.
 - Conflict apply returned nonzero and wrote markers without changing the
   external records; resolution apply returned zero.
 - The Vim-created Jira task's second apply returned an `update` action; the

@@ -50,6 +50,7 @@ _EXTERNAL_FRONTMATTER_KEYS = {
     "confluence_parent_id",
     "confluence_version",
     "sync_hash",
+    "sync_summary",
 }
 
 
@@ -165,6 +166,14 @@ def _bool(value: Optional[str]) -> bool:
     """Interpret common YAML-like boolean spellings."""
 
     return str(value).lower() in ("1", "true", "yes", "on")
+
+
+def _upload_only_for_kind(adapter: SyncAdapter, kind: str) -> bool:
+    """Return whether an adapter cannot fetch this synchronization kind."""
+
+    return kind in getattr(adapter, "upload_only_kinds", ()) or (
+        kind == "confluence" and getattr(adapter, "upload_only", False)
+    )
 
 
 def _source_hash(repo_root: Path, paths: List[Path]) -> str:
@@ -544,6 +553,9 @@ def create_plan(
                     observed,
                 ):
                     operation = "update"
+                elif observed.get("summary_conflict"):
+                    operation = "conflict"
+                    blocked_reason = "local and external Jira Summary overlap"
                 elif _observation_is_mergeable(document, observed):
                     operation = "merge"
                 else:
@@ -920,6 +932,13 @@ def _set_external(
             lines, "jira_key", result.get("key") or result.get("id") or ""
         )
         frontmatter.set_value(lines, "jira_url", result.get("url") or "")
+        frontmatter.set_value(
+            lines,
+            "sync_summary",
+            payload.get("title")
+            if payload
+            else _jira_summary(parse_document(str(path)), path),
+        )
         if payload and payload.get("parent_key"):
             frontmatter.set_value(
                 lines, "jira_parent_key", str(payload["parent_key"])
@@ -1143,6 +1162,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 observed.get("base_body"),
                 observed["remote"],
                 action["kind"],
+                summary_conflict=bool(observed.get("summary_conflict")),
             )
             _write_conflict_record(
                 repo_root,
@@ -1468,6 +1488,44 @@ def check(
             )
             if not kind or not external_id:
                 continue
+            if _upload_only_for_kind(adapter, kind):
+                base_file = _base_path(repo_root, path)
+                base = (
+                    canonical_sync_body(base_file.read_text(encoding="utf-8"))
+                    if base_file.is_file()
+                    else None
+                )
+                local_public_body = _comparison_body(
+                    document,
+                    kind,
+                    external_id,
+                    document.metadata.get("confluence_url"),
+                )
+                items.append(
+                    {
+                        "path": relative_path,
+                        "kind": kind,
+                        "external_id": external_id,
+                        "external_url": document.metadata.get(
+                            "confluence_url"
+                            if kind == "confluence"
+                            else "jira_url"
+                        ),
+                        "state": "upload_only",
+                    }
+                )
+                items[-1]["_observation"] = {
+                    "path": relative_path,
+                    "kind": kind,
+                    "external_id": external_id,
+                    "state": "upload_only",
+                    "local_public_body": local_public_body,
+                    "base_body": base,
+                    "remote": {},
+                    "comparison_body": None,
+                    "fetch_options": {},
+                }
+                continue
             remote = adapter.fetch(
                 kind,
                 external_id,
@@ -1510,18 +1568,53 @@ def check(
                 base, kind, external_id, document.metadata.get("confluence_url")
             )
             state = classify_drift(base, local_public_body, remote_public_body)
+            summary_conflict = False
             if kind == "jira":
-                summary_changed = remote.get("title") is not None and _jira_summary(
-                    document, path
-                ) != " ".join(str(remote["title"]).split())
+                local_summary = " ".join(_jira_summary(document, path).split())
+                remote_summary = (
+                    " ".join(str(remote["title"]).split())
+                    if remote.get("title") is not None
+                    else None
+                )
+                tracked_summary = frontmatter.value(
+                    path.read_text(encoding="utf-8").splitlines(), "sync_summary"
+                )
+                if tracked_summary is not None and remote_summary is not None:
+                    tracked_summary = " ".join(str(tracked_summary).split())
+                    local_summary_changed = local_summary != tracked_summary
+                    remote_summary_changed = remote_summary != tracked_summary
+                else:
+                    source_fingerprint = _source_fingerprint(
+                        path.read_text(encoding="utf-8").splitlines(),
+                        document.public_body,
+                    )
+                    local_source_changed = (
+                        bool(document.metadata.get("sync_hash"))
+                        and document.metadata.get("sync_hash") != source_fingerprint
+                    )
+                    local_summary_changed = (
+                        state in ("clean", "converged") and local_source_changed
+                    )
+                    remote_summary_changed = (
+                        remote_summary is not None and local_summary != remote_summary
+                    )
                 progress_changed = remote.get("progress_comment") is not None and (
                     canonical_sync_body(document.section("Progress Comment"))
                     != canonical_sync_body(str(remote["progress_comment"]))
                 )
-                if state in ("clean", "converged") and (
-                    summary_changed or progress_changed
+                summary_conflict = local_summary_changed and remote_summary_changed
+                if summary_conflict:
+                    state = "conflict"
+                elif state in ("clean", "converged") and (
+                    local_summary_changed
+                    or remote_summary_changed
+                    or progress_changed
                 ):
-                    state = "external_changed"
+                    state = (
+                        "local_changed"
+                        if local_summary_changed
+                        else "external_changed"
+                    )
             items.append(
                 {
                     "path": relative_path,
@@ -1544,6 +1637,7 @@ def check(
                 "remote": dict(remote),
                 "comparison_body": remote_public_body,
                 "fetch_options": fetch_options,
+                "summary_conflict": summary_conflict,
             }
         except Exception as error:
             error_count += 1
@@ -1757,7 +1851,11 @@ def _import_remote_record(
 
 
 def _write_conflict_markers(
-    path: Path, base_body: Optional[str], remote: Dict, kind: str
+    path: Path,
+    base_body: Optional[str],
+    remote: Dict,
+    kind: str,
+    summary_conflict: bool = False,
 ) -> None:
     """Write a three-way conflict into public Markdown while preserving notes."""
 
@@ -1788,13 +1886,30 @@ def _write_conflict_markers(
             )
         ),
     )
-    if not conflict:
+    if not conflict and not summary_conflict:
         raise SyncError("sync conflict observation no longer contains two-sided changes")
     merged_body = (
-        _replace_level_one_section(document.public_body, "Description", merged)
-        if kind == "jira"
-        else merged
+        document.public_body
+        if summary_conflict and not conflict
+        else (
+            _replace_level_one_section(document.public_body, "Description", merged)
+            if kind == "jira"
+            else merged
+        )
     )
+    if summary_conflict and kind == "jira":
+        summary_markers = "\n".join(
+            (
+                "<<<<<<< local",
+                _jira_summary(document, path),
+                "=======",
+                str(remote.get("title") or ""),
+                ">>>>>>> external",
+            )
+        )
+        merged_body = _replace_level_one_section(
+            merged_body, "Summary", summary_markers
+        )
     _write_managed_public_body(
         path, merged_body, document.implementation_note, format_public=True
     )

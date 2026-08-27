@@ -2,8 +2,9 @@
 
 The `confluence-datacenter` adapter is a one-way publication boundary from the
 separate GTD Markdown Repository to Confluence Data Center. It is intentionally
-not used by `sync check`, because Data Center page fetch/import is outside this
-initial scope.
+used by `sync check` only as an upload-only boundary: Data Center pages are
+reported as `upload_only` without a page GET or import attempt. Jira Cloud
+items continue through the normal Jira adapter.
 
 ## API contract
 

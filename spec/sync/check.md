@@ -20,6 +20,7 @@ pushes.
 | `conflict` | Both sides differ from the base and from each other. |
 | `converged` | Both sides changed from the base but now contain the same body. |
 | `unknown` | No base snapshot exists, so the change origin cannot be determined. |
+| `upload_only` | The selected adapter cannot fetch this external record; apply can still publish local changes. |
 | `error` | The item could not be parsed or fetched; the error is isolated to that item. |
 
 Items without a publish flag or external ID are not checked. Implementation
@@ -72,5 +73,8 @@ Git is `remote_ahead` or `diverged`. The latest observation is the input to
 `sync plan`. An external-only change becomes an `import` action. A two-sided
 change becomes a `merge` action when its line ranges do not overlap, and a
 `conflict` action only when different changes overlap. A local-only change
-remains an external update. Use `--no-git-fetch` only when the Git remote is
-intentionally unavailable.
+remains an external update. When the configured Confluence platform is Data
+Center, its upload-only adapter is used during check: Confluence items are
+reported as `upload_only` without issuing an unsupported GET, while Jira Cloud
+items continue to be checked normally. Use `--no-git-fetch` only when the Git
+remote is intentionally unavailable.
