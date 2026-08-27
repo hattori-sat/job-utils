@@ -1150,6 +1150,84 @@ Local-only objective.
 
         self.assertEqual(observation["items"][0]["state"], "clean")
 
+    def test_jira_summary_only_local_change_is_published(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Frontmatter title'
+publish_jira: 'true'
+jira_project: 'JOB'
+---
+
+# Summary
+
+Initial Jira summary.
+
+# Description
+
+Jira description remains unchanged.
+""",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "Initial Jira summary.", "Updated Jira summary."
+            ),
+            encoding="utf-8",
+        )
+
+        observation = check(self.repo, adapter)
+        self.assertEqual(observation["items"][0]["state"], "local_changed")
+        plan = create_plan(self.repo)
+        self.assertEqual(plan["actions"][0]["action"], "update")
+        self.assertEqual(
+            plan["actions"][0]["payload"]["title"], "Updated Jira summary."
+        )
+
+        apply_plan(self.repo, plan, adapter)
+        self.assertEqual(
+            adapter.fetch("jira", "MEM-1")["title"], "Updated Jira summary."
+        )
+
+    def test_jira_summary_only_external_change_is_imported(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Frontmatter title'
+publish_jira: 'true'
+jira_project: 'JOB'
+---
+
+# Summary
+
+Initial Jira summary.
+
+# Description
+
+Jira description remains unchanged.
+""",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        adapter.records["MEM-1"]["payload"]["title"] = "External Jira summary."
+
+        observation = check(self.repo, adapter)
+        self.assertEqual(observation["items"][0]["state"], "external_changed")
+        plan = create_plan(self.repo)
+        self.assertEqual(plan["actions"][0]["action"], "import")
+
+        apply_plan(self.repo, plan, adapter)
+        self.assertIn("External Jira summary.", path.read_text(encoding="utf-8"))
+
     def test_sync_payload_uses_environment_defaults_for_missing_front_matter(self):
         jira = self.repo / "gtd_tasks" / "task.md"
         jira.write_text(
