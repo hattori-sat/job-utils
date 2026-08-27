@@ -545,6 +545,9 @@ def create_plan(
                     observed,
                 ):
                     operation = "update"
+                elif observed.get("summary_conflict"):
+                    operation = "conflict"
+                    blocked_reason = "local and external Jira Summary overlap"
                 elif _observation_is_mergeable(document, observed):
                     operation = "merge"
                 else:
@@ -1151,6 +1154,7 @@ def apply_plan(repo_root: Path, plan: Dict, adapter: SyncAdapter) -> List[Dict]:
                 observed.get("base_body"),
                 observed["remote"],
                 action["kind"],
+                summary_conflict=bool(observed.get("summary_conflict")),
             )
             _write_conflict_record(
                 repo_root,
@@ -1518,6 +1522,7 @@ def check(
                 base, kind, external_id, document.metadata.get("confluence_url")
             )
             state = classify_drift(base, local_public_body, remote_public_body)
+            summary_conflict = False
             if kind == "jira":
                 local_summary = " ".join(_jira_summary(document, path).split())
                 remote_summary = (
@@ -1525,7 +1530,9 @@ def check(
                     if remote.get("title") is not None
                     else None
                 )
-                tracked_summary = document.metadata.get("sync_summary")
+                tracked_summary = frontmatter.value(
+                    path.read_text(encoding="utf-8").splitlines(), "sync_summary"
+                )
                 if tracked_summary is not None and remote_summary is not None:
                     tracked_summary = " ".join(str(tracked_summary).split())
                     local_summary_changed = local_summary != tracked_summary
@@ -1549,8 +1556,13 @@ def check(
                     canonical_sync_body(document.section("Progress Comment"))
                     != canonical_sync_body(str(remote["progress_comment"]))
                 )
-                if state in ("clean", "converged") and (
-                    remote_summary_changed or progress_changed
+                summary_conflict = local_summary_changed and remote_summary_changed
+                if summary_conflict:
+                    state = "conflict"
+                elif state in ("clean", "converged") and (
+                    local_summary_changed
+                    or remote_summary_changed
+                    or progress_changed
                 ):
                     state = (
                         "local_changed"
@@ -1579,6 +1591,7 @@ def check(
                 "remote": dict(remote),
                 "comparison_body": remote_public_body,
                 "fetch_options": fetch_options,
+                "summary_conflict": summary_conflict,
             }
         except Exception as error:
             error_count += 1
@@ -1792,7 +1805,11 @@ def _import_remote_record(
 
 
 def _write_conflict_markers(
-    path: Path, base_body: Optional[str], remote: Dict, kind: str
+    path: Path,
+    base_body: Optional[str],
+    remote: Dict,
+    kind: str,
+    summary_conflict: bool = False,
 ) -> None:
     """Write a three-way conflict into public Markdown while preserving notes."""
 
@@ -1823,13 +1840,30 @@ def _write_conflict_markers(
             )
         ),
     )
-    if not conflict:
+    if not conflict and not summary_conflict:
         raise SyncError("sync conflict observation no longer contains two-sided changes")
     merged_body = (
-        _replace_level_one_section(document.public_body, "Description", merged)
-        if kind == "jira"
-        else merged
+        document.public_body
+        if summary_conflict and not conflict
+        else (
+            _replace_level_one_section(document.public_body, "Description", merged)
+            if kind == "jira"
+            else merged
+        )
     )
+    if summary_conflict and kind == "jira":
+        summary_markers = "\n".join(
+            (
+                "<<<<<<< local",
+                _jira_summary(document, path),
+                "=======",
+                str(remote.get("title") or ""),
+                ">>>>>>> external",
+            )
+        )
+        merged_body = _replace_level_one_section(
+            merged_body, "Summary", summary_markers
+        )
     _write_managed_public_body(
         path, merged_body, document.implementation_note, format_public=True
     )

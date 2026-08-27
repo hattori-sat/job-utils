@@ -1176,7 +1176,8 @@ Jira description remains unchanged.
         apply_plan(self.repo, create_plan(self.repo), adapter)
         path.write_text(
             path.read_text(encoding="utf-8").replace(
-                "Initial Jira summary.", "Updated Jira summary."
+                "# Summary\n\nInitial Jira summary.",
+                "# Summary\n\nUpdated Jira summary.",
             ),
             encoding="utf-8",
         )
@@ -1227,6 +1228,67 @@ Jira description remains unchanged.
 
         apply_plan(self.repo, plan, adapter)
         self.assertIn("External Jira summary.", path.read_text(encoding="utf-8"))
+
+    def test_jira_summary_conflict_is_blocked_with_markers(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Frontmatter title'
+publish_jira: 'true'
+jira_project: 'JOB'
+---
+
+# Summary
+
+Initial Jira summary.
+
+# Description
+
+Jira description remains unchanged.
+""",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+
+        apply_plan(self.repo, create_plan(self.repo), adapter)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "# Summary\n\nInitial Jira summary.",
+                "# Summary\n\nLocal Jira summary.",
+            ),
+            encoding="utf-8",
+        )
+        adapter.records["MEM-1"]["payload"]["title"] = "External Jira summary."
+
+        observation = check(self.repo, adapter)
+        self.assertEqual(observation["items"][0]["state"], "conflict")
+        plan = create_plan(self.repo)
+        self.assertEqual(plan["actions"][0]["action"], "conflict")
+
+        with self.assertRaises(SyncError):
+            apply_plan(self.repo, plan, adapter)
+        content = path.read_text(encoding="utf-8")
+        self.assertIn("<<<<<<< local", content)
+        self.assertIn("Local Jira summary.", content)
+        self.assertIn("External Jira summary.", content)
+        self.assertEqual(adapter.fetch("jira", "MEM-1")["title"], "External Jira summary.")
+
+        path.write_text(
+            content.replace(
+                "<<<<<<< local\nLocal Jira summary.\n=======\n"
+                "External Jira summary.\n>>>>>>> external",
+                "Resolved Jira summary.",
+            ),
+            encoding="utf-8",
+        )
+        resolved_plan = create_plan(self.repo)
+        self.assertEqual(resolved_plan["actions"][0]["action"], "update")
+        apply_plan(self.repo, resolved_plan, adapter)
+        self.assertEqual(
+            adapter.fetch("jira", "MEM-1")["title"], "Resolved Jira summary."
+        )
 
     def test_sync_payload_uses_environment_defaults_for_missing_front_matter(self):
         jira = self.repo / "gtd_tasks" / "task.md"

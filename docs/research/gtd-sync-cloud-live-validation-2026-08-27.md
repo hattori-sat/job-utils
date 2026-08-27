@@ -66,12 +66,16 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
   a local Summary-only edit is published instead of being imported back from
   the unchanged Cloud issue. Existing files without the tracking value use
   their source fingerprint as a backward-compatible fallback.
+- When both local and Cloud Summary values change, sync blocks the update and
+  materializes Git-style conflict markers in `# Summary`; the external value
+  is not overwritten.
 - Added regression tests for self-reference drift, soft line wrapping,
-  latest-version updates, and Jira Summary-only local/external changes.
+  latest-version updates, and Jira Summary-only local/external/conflicting
+  changes.
 
 ## Verification evidence
 
-- Full local suite: 221 tests, all passed.
+- Full local suite: 222 tests, all passed.
 - Live final `sync check`: Jira and Confluence both `clean`, error count 0.
 - Live Summary-only Jira update: `check` detected `local_changed`, `plan`
   generated one Jira `update` action, Cloud update returned successfully, and
