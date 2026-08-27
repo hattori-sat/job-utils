@@ -85,5 +85,5 @@
 - [x] **Step 1: Run the full test suite and `git diff --check`.**
 - [x] **Step 2: Run a redacted live smoke test against the configured Jira Cloud/Confluence Cloud resources without changing protected records.**
 - [x] **Step 3: If a Jira Data Center endpoint is configured, run create/update/check using only an explicitly permitted test issue; otherwise record the live Jira Data Center test as UNKNOWN.**
-- [ ] **Step 4: Inspect staged files for secrets, personal data, generated output, and unrelated files.**
-- [ ] **Step 5: Commit and push the implementation to the existing feature PR branch.**
+- [x] **Step 4: Inspect staged files for secrets, personal data, generated output, and unrelated files.**
+- [x] **Step 5: Commit and push the implementation to the feature PR branch.**
