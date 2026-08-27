@@ -1245,6 +1245,63 @@ Jira description remains unchanged.
             adapter.fetch("jira", "MEM-1")["title"], "Updated Jira summary."
         )
 
+    def test_legacy_jira_without_sync_summary_publishes_local_summary_change(self):
+        path = self.repo / "gtd_tasks" / "task.md"
+        path.write_text(
+            """---
+gtd_id: 'task-1'
+kind: 'task'
+title: 'Initial Jira summary.'
+publish_jira: 'true'
+jira_project: 'JOB'
+jira_key: 'MEM-1'
+jira_url: 'https://memory.invalid/jira/MEM-1'
+sync_hash: 'legacy-source-hash'
+---
+
+# Summary
+
+Initial Jira summary.
+
+# Description
+
+Jira description remains unchanged.
+""",
+            encoding="utf-8",
+        )
+        adapter = MemoryAdapter()
+        adapter.records["MEM-1"] = {
+            "kind": "jira",
+            "payload": {
+                "title": "Initial Jira summary.",
+                "description": "Jira description remains unchanged.",
+                "summary_field": "summary",
+                "description_field": "description",
+            },
+            "url": "https://memory.invalid/jira/MEM-1",
+        }
+        _write_base(
+            self.repo,
+            path,
+            parse_document(str(path)).section("Description"),
+        )
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "# Summary\n\nInitial Jira summary.",
+                "# Summary\n\nUpdated Jira summary.",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        observation = check(self.repo, adapter)
+        self.assertEqual(observation["items"][0]["state"], "local_changed")
+        plan = create_plan(self.repo)
+        self.assertEqual(plan["actions"][0]["action"], "update")
+        self.assertEqual(
+            plan["actions"][0]["payload"]["title"], "Updated Jira summary."
+        )
+
     def test_jira_summary_only_external_change_is_imported(self):
         path = self.repo / "gtd_tasks" / "task.md"
         path.write_text(

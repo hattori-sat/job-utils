@@ -1579,6 +1579,12 @@ def check(
                 tracked_summary = frontmatter.value(
                     path.read_text(encoding="utf-8").splitlines(), "sync_summary"
                 )
+                if tracked_summary is None and remote_summary is not None:
+                    legacy_summary = document.metadata.get("title")
+                    if legacy_summary is not None:
+                        legacy_summary = " ".join(str(legacy_summary).split())
+                        if legacy_summary in (local_summary, remote_summary):
+                            tracked_summary = legacy_summary
                 if tracked_summary is not None and remote_summary is not None:
                     tracked_summary = " ".join(str(tracked_summary).split())
                     local_summary_changed = local_summary != tracked_summary

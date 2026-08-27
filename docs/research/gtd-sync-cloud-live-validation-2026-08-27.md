@@ -33,6 +33,7 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 | Immediate check after create | Found and fixed a false Confluence drift caused by the generated self-reference |
 | Markdown-only Jira and Confluence update | Passed; both were detected as `local_changed` and updated |
 | Jira Summary-only Markdown update | Found and fixed a false `external_changed` classification; the Cloud Summary was updated and the final check was `clean` |
+| Legacy Jira Summary-only edit without `sync_summary` | Reproduced a false `conflict` on `LIG-6`; fixed the legacy baseline fallback, applied the changed Summary through the real API, restored the original Summary, and confirmed final `clean` |
 | Vim task create, first apply, edit, and second apply | Passed; Jira Cloud test issue `LIG-7` was created, edited, updated, then returned to `clean` |
 | External-only Jira and Confluence update | Passed; both were imported from Cloud and returned to `clean` |
 | Same-range local/external conflict | Passed; both produced Git-style conflict markers and no Cloud write |
@@ -72,6 +73,9 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 - When both local and Cloud Summary values change, sync blocks the update and
   materializes Git-style conflict markers in `# Summary`; the external value
   is not overwritten.
+- Legacy Jira files without `sync_summary` now use front matter `title` as a
+  baseline only when it matches the local or remote Summary, preventing a
+  Summary-only local edit from becoming a false conflict.
 - Data Center-mode checks now route through the selected service adapters and
   skip the unsupported Confluence GET while continuing to check Jira Cloud.
 - Jira Data Center support now selects a REST v2 adapter independently, uses
@@ -83,11 +87,14 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 
 ## Verification evidence
 
-- Full local suite: 231 tests, all passed.
+- Full local suite: 232 tests, all passed.
 - Live final `sync check`: Jira and Confluence both `clean`, error count 0.
 - Live Summary-only Jira update: `check` detected `local_changed`, `plan`
   generated one Jira `update` action, Cloud update returned successfully, and
   the following `check` returned `clean`.
+- Live legacy Summary probe on `LIG-6`: the changed Summary was sent by the
+  real `update` path, the original Summary was restored by a second real
+  update, and the final Cloud check returned `clean`.
 - Live restored-fixture `sync plan`: 0 actions.
 - Conflict apply returned nonzero and wrote markers without changing the
   external records; resolution apply returned zero.
