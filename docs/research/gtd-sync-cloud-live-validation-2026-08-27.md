@@ -4,7 +4,8 @@
 
 This note records live validation of `job-utils` against Jira Cloud and
 Confluence Cloud using the separate Markdown repository at
-`/Users/hattori/work/gtd-htr`. Data Center was not used.
+`/Users/hattori/work/gtd-htr`. The live Jira endpoint was Cloud; no Jira Data
+Center endpoint or permitted Data Center fixture was configured.
 
 The live fixtures were created under the configured Confluence parent and in
 the configured Jira project. Existing Confluence pages and existing Jira
@@ -41,6 +42,7 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 | Deletion API safety check | Passed; 2 temporary Confluence children created and 2 deleted |
 | Dirty Git worktree update guard | Passed; `sync update` stopped with `working tree must be clean before pull` |
 | Data Center-mode `sync check` | Passed; Confluence was reported as `upload_only` without GET, while Jira Cloud remained `clean` |
+| Jira Data Center adapter contract tests | Passed; REST v2 routing, username Basic identity, `assignee.name`, and `parent.key` were verified without a live Data Center endpoint |
 
 ## Fixes made
 
@@ -70,15 +72,18 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 - When both local and Cloud Summary values change, sync blocks the update and
   materializes Git-style conflict markers in `# Summary`; the external value
   is not overwritten.
-- Data Center-mode checks now route through the hybrid adapter and skip the
-  unsupported Confluence GET while continuing to check Jira Cloud.
+- Data Center-mode checks now route through the selected service adapters and
+  skip the unsupported Confluence GET while continuing to check Jira Cloud.
+- Jira Data Center support now selects a REST v2 adapter independently, uses
+  `JIRA_USERNAME` for Basic authentication when provided, and sends
+  `assignee.name` for self-assignment.
 - Added regression tests for self-reference drift, soft line wrapping,
   latest-version updates, and Jira Summary-only local/external/conflicting
   changes.
 
 ## Verification evidence
 
-- Full local suite: 223 tests, all passed.
+- Full local suite: 231 tests, all passed.
 - Live final `sync check`: Jira and Confluence both `clean`, error count 0.
 - Live Summary-only Jira update: `check` detected `local_changed`, `plan`
   generated one Jira `update` action, Cloud update returned successfully, and
@@ -93,6 +98,9 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 
 - The repository has no GTD Sync delete action. Deletion was validated only
   through the direct Confluence Cloud API for newly created test children.
+- Live Jira Data Center create/update/check is UNKNOWN because no Data Center
+  base URL and permitted test issue were configured. The adapter contract and
+  routing are covered by local tests; Cloud live validation remains unchanged.
 - The separate `gtd-htr` validation repository was committed and pushed to its
   GitHub `main` branch during the final Vim `:GtdSyncApply` validation. The
   `job-utils` feature branch remains separate and is being submitted by the

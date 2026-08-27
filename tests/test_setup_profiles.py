@@ -71,6 +71,29 @@ class SetupProfileTests(unittest.TestCase):
                 (root / ".env").read_text(encoding="utf-8"),
             )
 
+    def test_setup_allows_selecting_jira_datacenter_and_username(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.example").write_text(
+                "JIRA_PLATFORM=cloud\nJIRA_USERNAME=\n",
+                encoding="utf-8",
+            )
+
+            def answer(prompt):
+                if "Jira platform" in prompt:
+                    return "datacenter"
+                if "Confluence platform" in prompt:
+                    return "cloud"
+                if "Jira username" in prompt:
+                    return "dc-user"
+                return ""
+
+            ensure_env_file(root, input_fn=answer, secret_input_fn=lambda prompt: "")
+
+            content = (root / ".env").read_text(encoding="utf-8")
+            self.assertIn("JIRA_PLATFORM=datacenter", content)
+            self.assertIn("JIRA_USERNAME=dc-user", content)
+
     def test_invalid_confluence_platform_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -78,6 +101,19 @@ class SetupProfileTests(unittest.TestCase):
                 "CONFLUENCE_PLATFORM=invalid\n", encoding="utf-8"
             )
             with self.assertRaisesRegex(SetupError, "CONFLUENCE_PLATFORM"):
+                ensure_env_file(
+                    root,
+                    input_fn=lambda prompt: "",
+                    secret_input_fn=lambda prompt: "",
+                )
+
+    def test_invalid_jira_platform_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.example").write_text(
+                "JIRA_PLATFORM=invalid\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(SetupError, "JIRA_PLATFORM"):
                 ensure_env_file(
                     root,
                     input_fn=lambda prompt: "",

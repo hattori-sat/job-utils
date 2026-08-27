@@ -17,6 +17,11 @@ workflow then has three phases:
 The user does not manually coordinate a Git push with an Atlassian operation
 in the normal workflow.
 
+Jira and Confluence deployment choices are independent. Jira Cloud uses its
+Cloud REST adapter, while Jira Data Center uses its REST v2 adapter and
+username-based self-assignment; Confluence Data Center remains upload-only
+for synchronization checks.
+
 ## Metrics
 
 Every successful `:Gtd` transition records a state event. Active time is

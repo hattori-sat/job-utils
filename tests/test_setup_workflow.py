@@ -2,6 +2,8 @@ import tempfile
 import unittest
 import json
 import subprocess
+import base64
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -121,6 +123,47 @@ class SetupWorkflowTests(unittest.TestCase):
             self.assertEqual(result["status"], "skipped")
             self.assertEqual(result["reason"], "network_error")
             self.assertIn("JIRA_SUMMARY_FIELD=summary", env_path.read_text())
+
+    def test_datacenter_field_discovery_uses_username_for_basic_auth(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'[{"id":"summary","name":"Summary"}]'
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "job-utils"
+            root.mkdir()
+            env_path = root / ".env"
+            env_path.write_text(
+                "JIRA_PLATFORM=datacenter\n"
+                "JIRA_BASE_URL=https://jira.example\n"
+                "JIRA_AUTH_TYPE=basic\n"
+                "JIRA_USERNAME=dc-user\n"
+                "JIRA_API_TOKEN=secret-token\n"
+                "JIRA_SUMMARY_FIELD=summary\n"
+                "JIRA_DESCRIPTION_FIELD=description\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {}, clear=True):
+                with patch(
+                    "jobutils.setup_workflow.request.urlopen",
+                    return_value=Response(),
+                ) as open_request:
+                    result = discover_jira_standard_field_ids(root)
+
+            self.assertEqual(result["status"], "discovered")
+            auth_header = open_request.call_args.args[0].get_header("Authorization")
+            encoded = auth_header.split(" ", 1)[1]
+            self.assertEqual(
+                base64.b64decode(encoded).decode("utf-8"),
+                "dc-user:secret-token",
+            )
 
     def test_missing_or_non_git_repository_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

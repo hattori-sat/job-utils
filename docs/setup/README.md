@@ -67,10 +67,12 @@ values are entered normally; Jira and Confluence tokens are requested with
 hidden input. Existing values are preserved. The file is ignored by Git and
 must never be copied into the Markdown Repository.
 
-On the first configuration run, setup asks whether Confluence is `cloud` or
-`datacenter` and saves the choice as `CONFLUENCE_PLATFORM`. Press Enter to use
-Cloud. A later setup run preserves the existing choice unless the value is
-changed in `.env`.
+On the first configuration run, setup asks whether Jira and Confluence are
+`cloud` or `datacenter` and saves the choices as `JIRA_PLATFORM` and
+`CONFLUENCE_PLATFORM`. Press Enter to use Cloud. Jira Data Center setups also
+configure `JIRA_USERNAME` for Basic authentication and self-assignment. A
+later setup run preserves the existing choices unless the values are changed
+in `.env`.
 
 See [environment variables](environment-variables.md) for the meaning of each
 setting. The lower-level operation is:
@@ -111,12 +113,12 @@ shown in the setup output.
 - `jobutils-activate` is an optional helper for manual Python commands.
 
 Atlassian synchronization uses Bearer tokens by default. The setup file asks
-for the Confluence deployment (`cloud` or `datacenter`) on first setup. The
-selected deployment is used by normal apply; Jira remains on its Cloud REST
-API path. The setup file contains `JIRA_AUTH_TYPE` and
+for the Jira and Confluence deployments (`cloud` or `datacenter`) on first
+setup. The selected deployments are used independently by normal apply. The
+setup file contains `JIRA_AUTH_TYPE` and
 `CONFLUENCE_AUTH_TYPE`; set either to `basic` only
-when using an email plus Basic API token. Jira issue synchronization uses REST
-API v2.
+when using the service's configured Basic identity (Cloud email or Data Center
+username) plus an API token. Jira issue synchronization uses REST API v2.
 
 The wrappers use absolute paths, so the CLI and Vim do not depend on the
 current directory or on a manually activated virtual environment.

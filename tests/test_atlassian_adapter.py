@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from jobutils.sync.adapters import (
     AtlassianHttpAdapter,
     ConfluenceDataCenterUploadAdapter,
+    JiraDataCenterAdapter,
     JiraCloudConfluenceDataCenterAdapter,
 )
 
@@ -243,6 +244,84 @@ class AtlassianAdapterTests(unittest.TestCase):
         self.assertEqual(
             issue_request.args[5]["fields"]["assignee"],
             {"accountId": "account-self"},
+        )
+
+    def test_jira_datacenter_create_assigns_current_user_by_name(self):
+        adapter = JiraDataCenterAdapter(self.adapter.config)
+        payload = {
+            "project": "DEMO",
+            "title": "Task",
+            "issue_type": "Task",
+            "description": "h1. Task\n",
+            "assign_to_self": True,
+        }
+        with patch.object(
+            adapter,
+            "_request",
+            side_effect=[
+                {"name": "dc-user"},
+                {"id": "10001", "key": "DEMO-1"},
+            ],
+        ) as request_mock:
+            result = adapter.create("jira", payload)
+
+        self.assertEqual(result["key"], "DEMO-1")
+        self.assertEqual(
+            request_mock.call_args_list[1].args[5]["fields"]["assignee"],
+            {"name": "dc-user"},
+        )
+
+    def test_jira_datacenter_create_keeps_parent_issue_key(self):
+        adapter = JiraDataCenterAdapter(self.adapter.config)
+        payload = {
+            "project": "DEMO",
+            "title": "Subtask",
+            "issue_type": "Sub-task",
+            "description": "h1. Subtask\n",
+            "parent_key": "DEMO-1",
+            "assign_to_self": False,
+        }
+        with patch.object(
+            adapter,
+            "_request",
+            return_value={"id": "10002", "key": "DEMO-2"},
+        ) as request_mock:
+            adapter.create("jira", payload)
+
+        fields = request_mock.call_args.args[5]["fields"]
+        self.assertEqual(fields["parent"], {"key": "DEMO-1"})
+
+    def test_jira_datacenter_basic_auth_uses_username(self):
+        adapter = JiraDataCenterAdapter(self.adapter.config)
+        with patch.dict(
+            os.environ,
+            {
+                "JIRA_USERNAME": "dc-user",
+                "JIRA_API_TOKEN": "token",
+                "JIRA_AUTH_TYPE": "basic",
+            },
+            clear=True,
+        ):
+            with patch(
+                "jobutils.sync.adapters.request.urlopen",
+                return_value=_Response(),
+            ) as open_request:
+                adapter._request(
+                    "https://jira.example",
+                    "/rest/api/2/myself",
+                    "JIRA_EMAIL",
+                    "JIRA_API_TOKEN",
+                    "GET",
+                    {},
+                    auth_type_key="JIRA_AUTH_TYPE",
+                    service="jira",
+                )
+
+        authorization = open_request.call_args.args[0].get_header("Authorization")
+        self.assertTrue(authorization.startswith("Basic "))
+        encoded = authorization.split(" ", 1)[1]
+        self.assertEqual(
+            base64.b64decode(encoded).decode("utf-8"), "dc-user:token"
         )
 
     def test_jira_create_omits_assignee_when_self_assignment_is_disabled(self):
