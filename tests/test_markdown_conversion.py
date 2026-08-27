@@ -140,6 +140,11 @@ Useful **context**.
         self.assertIn("```python\nprint('<ok>')\n```", markdown)
         self.assertIn("![diagram](attachment:diagram.png)", markdown)
 
+    def test_storage_text_does_not_double_escape_ampersands(self):
+        markdown = storage_to_markdown("<p>A &amp; &lt;tag&gt;</p>")
+
+        self.assertEqual(markdown, "A & &lt;tag&gt;\n")
+
         uppercase_attachment = markdown_to_storage("![diagram](ATTACHMENT:diagram.png)")
         self.assertIn("ri:attachment", uppercase_attachment)
 
@@ -158,6 +163,7 @@ print('ok')
         storage = markdown_to_storage(source)
         self.assertIn('<ol start="3">', storage)
         self.assertIn('ac:name="code"', storage)
+        self.assertIn("<ac:plain-text-body><![CDATA[", storage)
         self.assertIn("language", storage)
         round_tripped = storage_to_markdown(storage)
         self.assertIn("3. third\n4. fourth", round_tripped)
