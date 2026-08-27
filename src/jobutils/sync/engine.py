@@ -168,6 +168,14 @@ def _bool(value: Optional[str]) -> bool:
     return str(value).lower() in ("1", "true", "yes", "on")
 
 
+def _upload_only_for_kind(adapter: SyncAdapter, kind: str) -> bool:
+    """Return whether an adapter cannot fetch this synchronization kind."""
+
+    return kind in getattr(adapter, "upload_only_kinds", ()) or (
+        kind == "confluence" and getattr(adapter, "upload_only", False)
+    )
+
+
 def _source_hash(repo_root: Path, paths: List[Path]) -> str:
     """Hash the relative paths and bytes used to build a sync plan."""
 
@@ -1479,6 +1487,44 @@ def check(
                 else document.metadata.get("confluence_page_id")
             )
             if not kind or not external_id:
+                continue
+            if _upload_only_for_kind(adapter, kind):
+                base_file = _base_path(repo_root, path)
+                base = (
+                    canonical_sync_body(base_file.read_text(encoding="utf-8"))
+                    if base_file.is_file()
+                    else None
+                )
+                local_public_body = _comparison_body(
+                    document,
+                    kind,
+                    external_id,
+                    document.metadata.get("confluence_url"),
+                )
+                items.append(
+                    {
+                        "path": relative_path,
+                        "kind": kind,
+                        "external_id": external_id,
+                        "external_url": document.metadata.get(
+                            "confluence_url"
+                            if kind == "confluence"
+                            else "jira_url"
+                        ),
+                        "state": "upload_only",
+                    }
+                )
+                items[-1]["_observation"] = {
+                    "path": relative_path,
+                    "kind": kind,
+                    "external_id": external_id,
+                    "state": "upload_only",
+                    "local_public_body": local_public_body,
+                    "base_body": base,
+                    "remote": {},
+                    "comparison_body": None,
+                    "fetch_options": {},
+                }
                 continue
             remote = adapter.fetch(
                 kind,

@@ -40,6 +40,7 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 | Unicode, ampersands, literal angle brackets, quotes, and code blocks | Passed; Cloud round-trip preserved content and represented literal tags as escaped Markdown |
 | Deletion API safety check | Passed; 2 temporary Confluence children created and 2 deleted |
 | Dirty Git worktree update guard | Passed; `sync update` stopped with `working tree must be clean before pull` |
+| Data Center-mode `sync check` | Passed; Confluence was reported as `upload_only` without GET, while Jira Cloud remained `clean` |
 
 ## Fixes made
 
@@ -69,13 +70,15 @@ local ignored `.env` was updated with `JIRA_AUTH_TYPE=basic` and
 - When both local and Cloud Summary values change, sync blocks the update and
   materializes Git-style conflict markers in `# Summary`; the external value
   is not overwritten.
+- Data Center-mode checks now route through the hybrid adapter and skip the
+  unsupported Confluence GET while continuing to check Jira Cloud.
 - Added regression tests for self-reference drift, soft line wrapping,
   latest-version updates, and Jira Summary-only local/external/conflicting
   changes.
 
 ## Verification evidence
 
-- Full local suite: 222 tests, all passed.
+- Full local suite: 223 tests, all passed.
 - Live final `sync check`: Jira and Confluence both `clean`, error count 0.
 - Live Summary-only Jira update: `check` detected `local_changed`, `plan`
   generated one Jira `update` action, Cloud update returned successfully, and

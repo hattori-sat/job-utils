@@ -18,7 +18,7 @@ from jobutils.markdown.normalize import (
     parse_document,
 )
 from jobutils.sync.adapters import (
-    AtlassianHttpAdapter,
+    ConfluenceDataCenterUploadAdapter,
     JiraCloudConfluenceDataCenterAdapter,
     MemoryAdapter,
 )
@@ -57,10 +57,10 @@ class SyncTests(unittest.TestCase):
             clear=True,
         ):
             adapter = _build_atlassian_adapter("atlassian", for_apply=True)
-            check_adapter = _build_atlassian_adapter("atlassian")
+            check_adapter = _build_atlassian_adapter("atlassian", for_apply=True)
 
         self.assertIsInstance(adapter, JiraCloudConfluenceDataCenterAdapter)
-        self.assertIsInstance(check_adapter, AtlassianHttpAdapter)
+        self.assertIsInstance(check_adapter, JiraCloudConfluenceDataCenterAdapter)
 
     def test_invalid_confluence_platform_fails_before_apply(self):
         with patch.dict(os.environ, {"CONFLUENCE_PLATFORM": "server"}, clear=True):
@@ -637,6 +637,22 @@ Private content.
                 apply_plan(self.repo, plan, adapter)
 
         self.assertEqual(update.call_args.args[2]["version"], 4)
+
+    def test_datacenter_check_skips_unsupported_confluence_fetch(self):
+        path = self.repo / "documents" / "guide.md"
+        path.write_text(
+            "---\nkind: document\ntitle: Guide\npublish_confluence: true\n"
+            "confluence_page_id: PAGE-1\n---\n\n# Guide\n\nLocal\n",
+            encoding="utf-8",
+        )
+        adapter = ConfluenceDataCenterUploadAdapter(
+            {"confluence_base_url": "https://confluence.example"}
+        )
+
+        observation = check(self.repo, adapter)
+
+        self.assertEqual(observation["error_count"], 0)
+        self.assertEqual(observation["items"][0]["state"], "upload_only")
 
     def test_confluence_observation_keeps_raw_remote_and_comparison_projection(self):
         path = self.repo / "documents" / "guide.md"

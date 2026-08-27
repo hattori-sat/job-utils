@@ -438,7 +438,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 1
     if args.domain == "sync" and args.operation == "check":
         try:
-            adapter = _build_atlassian_adapter(args.adapter)
+            adapter = _build_atlassian_adapter(args.adapter, for_apply=True)
             result = check(
                 Path(args.repo), adapter, refresh_git=not args.no_git_fetch
             )
