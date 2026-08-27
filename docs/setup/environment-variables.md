@@ -7,9 +7,11 @@ values in Markdown front matter, metric events, setup logs, or reports.
 
 | Variable | Meaning |
 | --- | --- |
+| `JIRA_PLATFORM` | Jira deployment: `cloud` (default) or `datacenter`. |
 | `JIRA_BASE_URL` | Atlassian base URL, for example `https://example.atlassian.net`. |
 | `JIRA_AUTH_TYPE` | `bearer` (default) or `basic`; selects the Jira Authorization header. |
 | `JIRA_EMAIL` | Atlassian account email used only when `JIRA_AUTH_TYPE=basic`. |
+| `JIRA_USERNAME` | Jira Data Center username used for Basic authentication when set, and as the compatibility identity for self-assignment. |
 | `JIRA_API_TOKEN` | Jira Bearer token by default, or Basic API token when `JIRA_AUTH_TYPE=basic`. Keep it secret. |
 | `JIRA_PROJECT` | Default Jira project key for the local workspace. |
 | `JIRA_ISSUE_TYPE` | Default issue type, normally `Task` or `Story`. |
@@ -27,17 +29,11 @@ values in Markdown front matter, metric events, setup logs, or reports.
 | `CONFLUENCE_SPACE_KEY` | Default Confluence space key for the local workspace. |
 | `CONFLUENCE_PARENT_ID` | Default parent page ID for new document pages. |
 
-When `JIRA_ASSIGN_TO_SELF=true`, creating a new Jira issue first reads the
-authenticated user's `accountId` from Jira and includes that account as the
-assignee. This lookup is read-only and the account ID is kept in memory only.
-Existing issues are not reassigned during ordinary Markdown updates. Set the
-variable to `false` when new issues should use Jira's default assignee.
-
-When `JIRA_ASSIGN_TO_SELF=true`, creating a new Jira issue first reads the
-authenticated user's `accountId` from Jira and includes that account as the
-assignee. This lookup is read-only and the account ID is kept in memory only.
-Existing issues are not reassigned during ordinary Markdown updates. Set the
-variable to `false` when new issues should use Jira's default assignee.
+When `JIRA_ASSIGN_TO_SELF=true`, Cloud creates first read the authenticated
+user's `accountId` and Data Center creates first read the authenticated user's
+`name` from `/rest/api/2/myself`; the matching identity is included only on
+create. Existing issues are not reassigned during ordinary Markdown updates.
+Set the variable to `false` when new issues should use Jira's default assignee.
 
 The lower-level CLI reads configuration from the process environment. The
 normal setup wrappers run from the configured checkout and load `.env` for
@@ -56,4 +52,7 @@ front matter. Tokens are never copied into front matter or synchronization
 plans.
 
 Jira synchronization uses REST API v2 and sends Bearer authentication by
-default. Jira v2 receives wiki-text descriptions rather than Jira v3 ADF.
+default. Jira v2 receives wiki-text descriptions rather than Jira v3 ADF. For
+Jira Data Center, set `JIRA_PLATFORM=datacenter`; Basic authentication uses
+`JIRA_USERNAME` when present, and self-assignment sends the Data Center
+`name` field rather than the Cloud `accountId` field.

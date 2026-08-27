@@ -45,10 +45,11 @@ Only files whose front matter enables `publish_jira: true` or
 `publish_confluence: true` are included in synchronization.
 
 New Jira issues are assigned to the authenticated user when
-`JIRA_ASSIGN_TO_SELF=true` (the setup default). The adapter obtains the
-current user's Jira `accountId` before creating the issue. Set it to `false` to
-leave assignment to Jira's project default; existing issues are not reassigned
-by synchronization updates.
+`JIRA_ASSIGN_TO_SELF=true` (the setup default). With `JIRA_PLATFORM=cloud`,
+the adapter obtains the current user's Jira `accountId`; with
+`JIRA_PLATFORM=datacenter`, it obtains the current user's `name`. Set it to
+`false` to leave assignment to Jira's project default; existing issues are not
+reassigned by synchronization updates.
 
 Jira uses REST API v2 with Bearer authentication by default. If an external
 request fails, the error identifies the service and endpoint path without
@@ -71,9 +72,11 @@ Apply updates Jira or Confluence, writes returned IDs and URLs to front
 matter, commits the Markdown and synchronization state, and pushes the commit
 to the configured Git remote. Implementation Notes remain local.
 
-For Confluence Data Center upload-only publication, select `datacenter` during
-setup. The normal `:GtdSyncApply` / `--adapter atlassian` path then uses the
-Data Center upload adapter. An explicit adapter is also available:
+For Jira Data Center, set `JIRA_PLATFORM=datacenter` and configure the Jira
+Data Center base URL and username. For Confluence Data Center upload-only
+publication, select `datacenter` during setup. The normal `:GtdSyncApply` /
+`--adapter atlassian` path then routes each service to its selected adapter. An
+explicit Confluence adapter is also available:
 
 ```text
 jobutils sync plan --repo /path/to/gtd
@@ -83,8 +86,7 @@ jobutils sync apply --repo /path/to/gtd --plan .jobutils/sync/plans/PLAN.json \
 
 This adapter uses the Data Center Content REST API (`/rest/api/content`),
 requires `CONFLUENCE_SPACE_KEY`, and supports page creation and updates with an
-optional parent page ID. It does not fetch or import Data Center pages; use the
-Cloud Jira actions still use the Cloud Jira adapter in the same apply. From
+optional parent page ID. It does not fetch or import Data Center pages. From
 Vim, the explicit document-only command is `:GtdSyncApplyDataCenter [plan]`.
 
 ## Synchronize before editing

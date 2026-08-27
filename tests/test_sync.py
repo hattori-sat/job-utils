@@ -18,7 +18,10 @@ from jobutils.markdown.normalize import (
     parse_document,
 )
 from jobutils.sync.adapters import (
+    AtlassianHttpAdapter,
+    AtlassianPlatformAdapter,
     ConfluenceDataCenterUploadAdapter,
+    JiraDataCenterAdapter,
     JiraCloudConfluenceDataCenterAdapter,
     MemoryAdapter,
 )
@@ -61,6 +64,37 @@ class SyncTests(unittest.TestCase):
 
         self.assertIsInstance(adapter, JiraCloudConfluenceDataCenterAdapter)
         self.assertIsInstance(check_adapter, JiraCloudConfluenceDataCenterAdapter)
+
+    def test_jira_datacenter_platform_routes_independently(self):
+        with patch.dict(
+            os.environ,
+            {
+                "JIRA_PLATFORM": "datacenter",
+                "CONFLUENCE_PLATFORM": "cloud",
+            },
+            clear=True,
+        ):
+            adapter = _build_atlassian_adapter("atlassian", for_apply=True)
+
+        self.assertIsInstance(adapter, AtlassianPlatformAdapter)
+        self.assertIsInstance(adapter.jira, JiraDataCenterAdapter)
+        self.assertIsInstance(adapter.confluence, AtlassianHttpAdapter)
+
+    def test_both_datacenter_platforms_route_to_their_selected_adapters(self):
+        with patch.dict(
+            os.environ,
+            {
+                "JIRA_PLATFORM": "datacenter",
+                "CONFLUENCE_PLATFORM": "datacenter",
+            },
+            clear=True,
+        ):
+            adapter = _build_atlassian_adapter("atlassian", for_apply=True)
+
+        self.assertIsInstance(adapter, AtlassianPlatformAdapter)
+        self.assertIsInstance(adapter.jira, JiraDataCenterAdapter)
+        self.assertIsInstance(adapter.confluence, ConfluenceDataCenterUploadAdapter)
+        self.assertEqual(adapter.upload_only_kinds, frozenset({"confluence"}))
 
     def test_invalid_confluence_platform_fails_before_apply(self):
         with patch.dict(os.environ, {"CONFLUENCE_PLATFORM": "server"}, clear=True):

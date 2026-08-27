@@ -35,7 +35,9 @@ from .markdown.formatter import FormatError, format_file
 from .setup_workflow import SetupError, run_setup
 from .sync.adapters import (
     AtlassianHttpAdapter,
+    AtlassianPlatformAdapter,
     ConfluenceDataCenterUploadAdapter,
+    JiraDataCenterAdapter,
     JiraCloudConfluenceDataCenterAdapter,
     MemoryAdapter,
 )
@@ -193,6 +195,15 @@ def _confluence_platform() -> str:
     return value
 
 
+def _jira_platform() -> str:
+    """Return the configured Jira deployment or fail clearly."""
+
+    value = os.environ.get("JIRA_PLATFORM", "cloud").strip().casefold()
+    if value not in ("cloud", "datacenter"):
+        raise RuntimeError("JIRA_PLATFORM must be one of: cloud, datacenter")
+    return value
+
+
 def _build_atlassian_adapter(adapter_name: str, for_apply: bool = False):
     """Build the selected Atlassian adapter using the setup profile."""
 
@@ -202,21 +213,30 @@ def _build_atlassian_adapter(adapter_name: str, for_apply: bool = False):
         return ConfluenceDataCenterUploadAdapter(
             {"confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", "")}
         )
-    if for_apply and _confluence_platform() == "datacenter":
-        return JiraCloudConfluenceDataCenterAdapter(
-            {
-                "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-                "confluence_base_url": os.environ.get(
-                    "CONFLUENCE_BASE_URL", ""
-                ),
-            }
-        )
-    return AtlassianHttpAdapter(
-        {
-            "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
-            "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
-        }
+    config = {
+        "jira_base_url": os.environ.get("JIRA_BASE_URL", ""),
+        "confluence_base_url": os.environ.get("CONFLUENCE_BASE_URL", ""),
+    }
+    jira = (
+        JiraDataCenterAdapter(config)
+        if _jira_platform() == "datacenter"
+        else AtlassianHttpAdapter(config)
     )
+    confluence = (
+        ConfluenceDataCenterUploadAdapter(config)
+        if _confluence_platform() == "datacenter"
+        else AtlassianHttpAdapter(config)
+    )
+    if (
+        type(jira) is AtlassianHttpAdapter
+        and type(confluence) is AtlassianHttpAdapter
+    ):
+        return jira
+    if type(jira) is AtlassianHttpAdapter and isinstance(
+        confluence, ConfluenceDataCenterUploadAdapter
+    ):
+        return JiraCloudConfluenceDataCenterAdapter(config)
+    return AtlassianPlatformAdapter(jira, confluence)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

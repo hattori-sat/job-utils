@@ -22,10 +22,13 @@ class SetupError(RuntimeError):
 
 SUPPORTED_PLATFORMS = ("macos", "ubuntu", "windows")
 CONFLUENCE_PLATFORMS = ("cloud", "datacenter")
+JIRA_PLATFORMS = ("cloud", "datacenter")
 ENV_SPECS = (
+    ("JIRA_PLATFORM", "Jira platform (cloud or datacenter)", False, "cloud"),
     ("JIRA_BASE_URL", "Jira base URL", False, "https://your-domain.atlassian.net"),
     ("JIRA_AUTH_TYPE", "Jira authentication type (bearer or basic)", False, "bearer"),
     ("JIRA_EMAIL", "Jira account email", False, ""),
+    ("JIRA_USERNAME", "Jira username (Data Center)", False, ""),
     ("JIRA_API_TOKEN", "Jira API token", True, ""),
     ("JIRA_PROJECT", "Jira project key", False, ""),
     ("JIRA_ISSUE_TYPE", "Jira issue type", False, "Task"),
@@ -354,7 +357,23 @@ def ensure_env_file(
     values = _parse_env(lines)
     initial_setup = not env_path.is_file()
     for key, label, secret, default in ENV_SPECS:
+        values = _parse_env(lines)
         current = values.get(key, "")
+        jira_platform = values.get("JIRA_PLATFORM", "cloud")
+        if key == "JIRA_EMAIL" and jira_platform == "datacenter":
+            continue
+        if key == "JIRA_USERNAME" and jira_platform != "datacenter":
+            continue
+        if key == "JIRA_PLATFORM" and current:
+            current = current.casefold()
+            if current not in JIRA_PLATFORMS:
+                raise SetupError(
+                    "JIRA_PLATFORM must be one of: {}".format(
+                        ", ".join(JIRA_PLATFORMS)
+                    )
+                )
+            if values.get(key) != current:
+                _set_env_value(lines, key, current)
         if key == "CONFLUENCE_PLATFORM" and current:
             current = current.casefold()
             if current not in CONFLUENCE_PLATFORMS:
@@ -365,7 +384,9 @@ def ensure_env_file(
                 )
             if values.get(key) != current:
                 _set_env_value(lines, key, current)
-        force_initial_platform_prompt = key == "CONFLUENCE_PLATFORM" and initial_setup
+        force_initial_platform_prompt = (
+            key in ("JIRA_PLATFORM", "CONFLUENCE_PLATFORM") and initial_setup
+        )
         placeholder = current in ("", "YOUR_ATLASSIAN_EMAIL") or current.startswith(
             "https://your-domain"
         )
@@ -382,6 +403,14 @@ def ensure_env_file(
                 raise SetupError(
                     "CONFLUENCE_PLATFORM must be one of: {}".format(
                         ", ".join(CONFLUENCE_PLATFORMS)
+                    )
+                )
+        if key == "JIRA_PLATFORM":
+            answer = answer.casefold()
+            if answer not in JIRA_PLATFORMS:
+                raise SetupError(
+                    "JIRA_PLATFORM must be one of: {}".format(
+                        ", ".join(JIRA_PLATFORMS)
                     )
                 )
         if answer:
@@ -425,12 +454,25 @@ def discover_jira_standard_field_ids(job_utils_root: Path) -> Dict[str, object]:
     if auth_type == "bearer":
         headers["Authorization"] = "Bearer " + token
     elif auth_type == "basic":
-        email = _configured_env_value(values, "JIRA_EMAIL")
-        if not email:
-            return {"status": "skipped", "reason": "jira_email_missing"}
-        raw_auth = base64.b64encode((email + ":" + token).encode("utf-8")).decode(
-            "ascii"
+        jira_platform = (
+            _configured_env_value(values, "JIRA_PLATFORM") or "cloud"
+        ).casefold()
+        identity_key = (
+            "JIRA_USERNAME" if jira_platform == "datacenter" else "JIRA_EMAIL"
         )
+        identity = _configured_env_value(values, identity_key)
+        if not identity:
+            return {
+                "status": "skipped",
+                "reason": (
+                    "jira_username_missing"
+                    if jira_platform == "datacenter"
+                    else "jira_email_missing"
+                ),
+            }
+        raw_auth = base64.b64encode(
+            (identity + ":" + token).encode("utf-8")
+        ).decode("ascii")
         headers["Authorization"] = "Basic " + raw_auth
     else:
         return {"status": "skipped", "reason": "unsupported_auth_type"}

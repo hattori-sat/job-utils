@@ -72,12 +72,12 @@ stored issue key to the child request. The resolved `jira_parent_key` is
 written back to the child front matter. An unresolved required parent stops
 the apply before the child request is sent.
 
-The adapter boundary supports a deterministic memory adapter for tests, an HTTP
-adapter for Jira Cloud REST API v2 and Confluence Cloud REST API v2, and an
-upload-only HTTP adapter for Confluence Data Center. `CONFLUENCE_PLATFORM`
-selects Cloud or Data Center for normal apply; when Data Center is selected,
-Jira continues to use its Cloud adapter and Confluence uses the upload-only
-adapter. For
+The adapter boundary supports a deterministic memory adapter for tests, Jira
+Cloud and Jira Data Center REST API v2 adapters, an HTTP adapter for
+Confluence Cloud REST API v2, and an upload-only HTTP adapter for Confluence
+Data Center. `JIRA_PLATFORM` and `CONFLUENCE_PLATFORM` independently select
+the deployment used for normal apply. Jira Cloud self-assignment uses
+`accountId`; Jira Data Center self-assignment uses `name`. For
 task Markdown, the Jira summary is sourced from the `# Summary` section, with
 front matter `title` as the fallback, and the Jira description is sourced only
 from the `# Description` section. The

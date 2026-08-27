@@ -158,6 +158,11 @@ class AtlassianHttpAdapter(SyncAdapter):
             return value.strip().lower() in ("1", "true", "yes", "on")
         return bool(value)
 
+    def _jira_assignee(self) -> Dict[str, str]:
+        """Return the Jira Cloud assignee payload for the authenticated user."""
+
+        return {"accountId": self._jira_current_user_account_id_value()}
+
     @staticmethod
     def _progress_value(payload: Dict):
         """Render Progress Comment for either Jira text-field shape."""
@@ -264,9 +269,7 @@ class AtlassianHttpAdapter(SyncAdapter):
             if payload.get("progress_comment_field") and "progress_comment" in payload:
                 fields[payload["progress_comment_field"]] = self._progress_value(payload)
             if self._assign_to_self_enabled(payload):
-                fields["assignee"] = {
-                    "accountId": self._jira_current_user_account_id_value()
-                }
+                fields["assignee"] = self._jira_assignee()
             body = {"fields": fields}
             if payload.get("parent_key"):
                 body["fields"]["parent"] = {"key": payload["parent_key"]}
@@ -440,6 +443,106 @@ class AtlassianHttpAdapter(SyncAdapter):
             "version": result.get("version", {}).get("number"),
             "parent_id": result.get("parentId"),
         }
+
+
+class JiraDataCenterAdapter(AtlassianHttpAdapter):
+    """Jira Data Center REST v2 adapter with username-based assignment."""
+
+    def _request(
+        self,
+        base_url: str,
+        path: str,
+        email_key: str,
+        token_key: str,
+        method: str,
+        body: Dict,
+        auth_type_key: str = "",
+        service: str = "atlassian",
+    ) -> Dict:
+        """Use the configured Jira username for Data Center Basic auth."""
+
+        if service == "jira" and email_key == "JIRA_EMAIL":
+            email_key = (
+                "JIRA_USERNAME"
+                if os.environ.get("JIRA_USERNAME")
+                else "JIRA_EMAIL"
+            )
+        return super()._request(
+            base_url,
+            path,
+            email_key,
+            token_key,
+            method,
+            body,
+            auth_type_key=auth_type_key,
+            service=service,
+        )
+
+    def _jira_current_user_name_value(self) -> str:
+        """Resolve the authenticated Jira Data Center username."""
+
+        result = self._request(
+            self.config["jira_base_url"],
+            "/rest/api/2/myself",
+            "JIRA_EMAIL",
+            "JIRA_API_TOKEN",
+            "GET",
+            {},
+            auth_type_key="JIRA_AUTH_TYPE",
+            service="jira",
+        )
+        for key in ("name", "username", "key"):
+            value = result.get(key) if isinstance(result, dict) else None
+            if isinstance(value, str) and value.strip():
+                return value
+        raise RuntimeError(
+            "jira current user response did not include a Data Center username"
+        )
+
+    def _jira_assignee(self) -> Dict[str, str]:
+        """Return the Jira Data Center username assignee payload."""
+
+        return {"name": self._jira_current_user_name_value()}
+
+
+class AtlassianPlatformAdapter(SyncAdapter):
+    """Route Jira and Confluence through independently selected adapters."""
+
+    def __init__(self, jira: SyncAdapter, confluence: SyncAdapter):
+        """Store the selected Jira and Confluence service adapters."""
+
+        self.jira = jira
+        self.confluence = confluence
+        upload_only_kinds = []
+        if getattr(confluence, "upload_only", False):
+            upload_only_kinds.append("confluence")
+        self.upload_only_kinds = frozenset(upload_only_kinds)
+
+    def _adapter(self, kind: str) -> SyncAdapter:
+        """Select the service adapter for one synchronization kind."""
+
+        if kind == "jira":
+            return self.jira
+        if kind == "confluence":
+            return self.confluence
+        raise ValueError("unsupported synchronization kind: {}".format(kind))
+
+    def create(self, kind: str, payload: Dict) -> Dict:
+        """Create through the selected service adapter."""
+
+        return self._adapter(kind).create(kind, payload)
+
+    def update(self, kind: str, external_id: str, payload: Dict) -> Dict:
+        """Update through the selected service adapter."""
+
+        return self._adapter(kind).update(kind, external_id, payload)
+
+    def fetch(
+        self, kind: str, external_id: str, options: Optional[Dict] = None
+    ) -> Dict:
+        """Fetch through the selected service adapter."""
+
+        return self._adapter(kind).fetch(kind, external_id, options)
 
 
 class ConfluenceDataCenterUploadAdapter(AtlassianHttpAdapter):
